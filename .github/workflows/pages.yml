@@ -1,0 +1,56 @@
+name: Publish Stocks website
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['index.html', 'styles.css', 'app.js', 'data/**', 'docs/**', '.github/workflows/pages.yml']
+  workflow_run:
+    workflows: ['Refresh Stocks']
+    types: [completed]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: stocks-pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: main}
+      - name: Check whether Pages has been enabled
+        id: pages
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const {data} = await github.rest.repos.getPages({...context.repo});
+              const enabled = data.build_type === 'workflow';
+              core.setOutput('enabled', enabled ? 'true' : 'false');
+              if (!enabled) core.notice('Set Settings > Pages > Source to GitHub Actions to publish.');
+            } catch (e) {
+              if (e.status !== 404) throw e;
+              core.setOutput('enabled', 'false');
+              core.notice('One-time setup: Settings > Pages > Source > GitHub Actions, then run this workflow.');
+            }
+      - name: Prepare static website
+        if: steps.pages.outputs.enabled == 'true'
+        run: |
+          mkdir -p _site/data _site/docs
+          cp index.html styles.css app.js .nojekyll _site/
+          cp data/latest.json data/health.json _site/data/
+          if [ -f data/charts.json ]; then cp data/charts.json _site/data/; fi
+          cp docs/METHODOLOGY.md _site/docs/
+      - uses: actions/configure-pages@v5
+        if: steps.pages.outputs.enabled == 'true'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outputs.enabled == 'true'
+        with: {path: _site}
+      - uses: actions/deploy-pages@v4
+        if: steps.pages.outputs.enabled == 'true'
+        id: deployment

@@ -1,0 +1,79 @@
+# Confirmed-move research specification — confirmed-v1
+
+## Objective
+
+Surface moves that have already begun and held a reference level, with clear participation and liquidity context. Do not select stocks that are merely approaching a breakout. This is an attention-allocation tool, not an order generator, probability estimate or guarantee of upside.
+
+## Completed sessions and quality
+
+The expected session is the latest NSE calendar close at least three hours before scan time. The maintained `pandas_market_calendars` NSE calendar accounts for holidays and special sessions as represented by that package. Unexpected closures or calendar errors require a calendar update; a failed benchmark freshness check stops publication.
+
+Fetch two years of daily prices once per security per scan, with one retry for missing symbols. Normalize dates, remove invalid/duplicate OHLC bars, and discard all data after the expected session. The benchmark must be current; at least 85% of the configured universe must have current data. A failed scan preserves the earlier successful snapshot and writes a separate health error.
+
+Eligible stocks require 130 complete recent benchmark sessions, at least 55 positive-volume days in the last 60 sessions, and median 60-session close × volume of at least ₹2 crore/day. Corporate-action-adjusted prices are used for returns and chart structure; raw closes are used for turnover. Close × volume is a cash-turnover approximation, not official exchange traded value.
+
+Zero candidates is valid. Missing benchmarks, stale bars, and data outages never imply a buy or a passing condition. ASM/GSM lists, series restrictions, price bands, block deals and event news are **not** automatically screened in v1. This limitation is visible in stock details and methodology. Do not infer tradability merely from the liquidity check.
+
+## Common confirmation requirements
+
+- Crossing occurred in the latest five completed sessions.
+- At least two consecutive closes, beginning with the crossing, are above the same fixed prior-high level; every subsequent close holds it.
+- Latest close > 20-session average > 50-session average.
+- The 20-session average has risen versus five sessions earlier.
+- Positive five-session return and positive 20-session stock return minus Nifty 50 return.
+- Median cash turnover over the latest five sessions ≥1.2× the median of the preceding twenty.
+- The mean closing location within the last three daily ranges is ≥0.55. A zero-range bar has location 0.5.
+
+The breakout day's high is excluded from the reference. No future prices appear in signal construction. The rules describe observed confirmation; they are not calibrated probabilities.
+
+## Two distinct setups
+
+**Confirmed moves:** crossing and holding the maximum adjusted high of the sixty sessions before the breakout.
+
+**Leaders resuming:** at least a 10% advance over forty sessions ending before the consolidation, followed by ten consolidation sessions with total high/low range ≤12% and at least three down closes. Price then crosses and holds the prior twenty-session high. Positive 60-session relative performance versus Nifty is also required. If this pattern qualifies it receives its own label before the generic sixty-session breakout is considered.
+
+## Extension and event review
+
+Remove from the two candidate lists when any of the following holds:
+
+- Latest close >8% above the breakout reference.
+- Latest close >12% above its 20-session average.
+- Five-session return >15%.
+- Any absolute daily close-to-close move in the last five sessions >15%.
+
+Those with a held breakout remain inspectable under **Extended / event**. This is an investigation queue, not an assertion that a large event is bearish. The breakout reference is a structural observation, not an executable stop-loss guarantee.
+
+## Ordering and established leaders
+
+Default order: 20-session relative strength, then turnover participation, then identity for tie-breaking. The first 15 names are a review budget, not a tested top-15 strategy. The UI also supports liquidity and first-detection sorting.
+
+The separate established-leaders view selects the top decile by `adjusted_close[t−21] / adjusted_close[t−252] − 1`, requiring sufficient history. It excludes the recent month from the 12-month lookback. This deliberately matches its displayed definition and does not borrow passing results from the differently indexed Sector-data implementation.
+
+## Themes and industries
+
+Use the median return of current eligible members; do not include old fallback values or inherited snapshot weights. Breadth is the share of those members above their 50-session average. Breadth change compares the same cohort with its position five sessions earlier.
+
+A group needs at least three eligible members and 70% eligibility coverage to receive a state:
+
+- Improving: breadth rose ≥5 percentage points and median 20-session relative return is positive.
+- Leading: breadth ≥60% and median relative return is positive.
+- Weakening: breadth fell ≥5 percentage points.
+- Mixed otherwise; insufficient-coverage groups are explicitly labelled.
+
+Memberships come from the current registry or mapped curated Sector-data themes. They are not point-in-time historical memberships. Groups can overlap. A stock appearing in several themes does not gain additional confirmations. Theme states are descriptive and do not change stock-selection rules.
+
+## First-detection journal and prospective outcomes
+
+The first successful daily archive is written once per model version and session. Same-session reruns do not add new first detections or replace the archive. The latest display may be regenerated, while the original archive stays intact. A detection identity includes ISIN, setup, breakout date and model version. Future new breakouts can be separate episodes.
+
+Outcomes begin at the **next benchmark session's open** after first detection. At 5/10/20/40 sessions, report gross return, net return with an assumed 0.5% round-trip cost (0.25% each side), matched-date Nifty return, net excess return, and worst low relative to entry. Missing entry prices or incomplete stock session coverage leave that observation unevaluated. No same-close entry is counted. Current status separately reports whether price still holds the historical breakout reference recalculated on the current adjusted basis.
+
+The table is an event study, not a capital-constrained portfolio or a backtest of a buy/sell strategy. Signals overlap and can be highly correlated across stocks and themes. The same company can produce multiple episodes. The UI marks fewer than 30 mature observations as an early sample; reaching 30 does not establish significance. Suspensions/delistings and disappearing provider histories can bias the evaluated subset, so unavailable observations remain visible in the journal.
+
+## Research discipline and remaining work
+
+Do not claim validated alpha or guaranteed upside. Do not resurrect retired R2/R5 rules. Preserve this version before outcomes mature. Compare future versions against simple breakout and momentum baselines and date/sector/liquidity-matched controls, use block-aware uncertainty estimates, and reserve genuinely new observations for evaluation. Include missed moves, false alerts, regime splits, position-size-sensitive costs, circuit constraints, and size-appropriate benchmarks before any trading-performance claim.
+
+This release implements the daily workspace, transparent confirmation hypotheses and prospective measurement infrastructure. It does not implement automated fundamental/news research, exchange surveillance clearance, broker execution, notifications, cloud watchlist synchronization or retrospective proof of performance.
+
+An ongoing setup is recorded once per stock, setup type and model. A later crossing is a new observation only after an intervening close below the previous breakout reference. Completed forward observations are stored permanently; a later provider outage or rolling history limit does not erase them.

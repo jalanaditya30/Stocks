@@ -1,0 +1,48 @@
+name: Refresh Stocks
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['pipeline/**', 'config/**', 'tests/**', 'requirements.txt', '.github/workflows/refresh.yml']
+  schedule:
+    - cron: '5 13 * * 1-5' # 18:35 IST; completed bars with publication allowance
+permissions:
+  contents: write
+concurrency:
+  group: stocks-market-refresh
+  cancel-in-progress: false
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12', cache: pip}
+      - run: pip install -r requirements.txt
+      - name: Test confirmation, freshness and forward tracking
+        run: python -m unittest discover -s tests -v
+      - name: Build shared market snapshot
+        id: scan
+        run: python -m pipeline.refresh
+      - name: Preserve snapshot and refresh status
+        if: always() && (steps.scan.outcome == 'success' || steps.scan.outcome == 'failure')
+        run: |
+          git config user.name "stocks-data-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet && exit 0
+          git commit -m "Refresh Stocks market snapshot and health"
+          for attempt in 1 2 3 4; do
+            git fetch origin main
+            git rebase origin/main || { git rebase --abort; exit 1; }
+            git push origin HEAD:main && exit 0
+            sleep "$((attempt * 3))"
+          done
+          exit 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stocks-scan-status
+          path: data/health.json

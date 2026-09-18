@@ -1,0 +1,20 @@
+{
+  "version": "confirmed-v1",
+  "min_turnover_cr": 2.0,
+  "min_history": 130,
+  "min_coverage": 0.85,
+  "benchmark": "^NSEI",
+  "min_participation": 1.2,
+  "max_extension_pct": 8.0,
+  "max_sma_extension_pct": 12.0,
+  "max_return_5d_pct": 15.0,
+  "event_day_pct": 15.0,
+  "confirmation_closes": 2,
+  "lookback_breakout_sessions": 5,
+  "forward_horizons": [
+    5,
+    10,
+    20,
+    40
+  ]
+}

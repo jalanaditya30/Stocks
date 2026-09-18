@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="A daily workspace for confirmed stock moves, leaders resuming, and strengthening Indian market themes.">
+  <title>Stocks · Moves with follow-through</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to research</a>
+<aside class="sidebar">
+  <a class="brand" href="./" aria-label="Stocks home"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 24V8M5 24h23M10 20l6-7 5 3 7-11"/></svg><span>Stocks<span class="brand-dot">.</span></span></a>
+  <div class="nav-label">YOUR RESEARCH DESK</div>
+  <nav aria-label="Workspace">
+    <button class="nav active" data-view="overview"><span>◧</span> Overview</button>
+    <button class="nav" data-view="candidates"><span>↗</span> Stock moves</button>
+    <button class="nav" data-view="themes"><span>▦</span> Themes</button>
+    <button class="nav" data-view="watchlist"><span>☆</span> Watchlist <small id="watch-count">0</small></button>
+    <button class="nav" data-view="evidence"><span>◷</span> Evidence</button>
+  </nav>
+  <div class="sidebar-bottom"><div class="small-label">THE APPROACH</div><p>Price has moved.<br>Now look for follow-through.</p><button class="text-button" id="method-open">How this works ↗</button><div class="local-note">Your notes and watchlist stay in this browser.</div><button class="text-button" id="export">Export my workspace ↓</button><label class="text-button import-label" for="import">Import workspace ↑</label><input type="file" id="import" accept="application/json" hidden></div>
+</aside>
+<main id="main">
+  <header class="topbar"><span class="eyebrow">INDIAN EQUITIES / DAILY RESEARCH</span><div><span class="eod-dot"></span><span id="session">End-of-day workspace</span><button class="icon-button" id="reload" aria-label="Reload market snapshot">↻</button></div></header>
+  <section class="page-heading"><div><div class="eyebrow" id="page-kicker">THE DAILY PICTURE</div><h1 id="page-title">Moves with follow-through.</h1><p id="page-subtitle">Confirmed stock moves. Strengthening themes. A clearer place to start.</p></div><span class="version">Research rules · v1</span></section>
+  <div id="health" class="notice" role="status" hidden></div>
+  <section id="stats" class="stats" aria-label="Market scan summary"></section>
+  <section id="theme-preview" class="section" hidden><div class="section-heading"><div><span class="eyebrow">WHERE STRENGTH IS SPREADING</span><h2>Themes to investigate</h2></div><button class="text-button" id="all-themes">Explore themes →</button></div><div id="theme-cards" class="theme-cards"></div></section>
+  <section id="stock-section" class="section">
+    <div class="section-heading"><div><span class="eyebrow" id="list-kicker">A MANAGEABLE STARTING POINT</span><h2 id="list-title">Your review list</h2></div><span id="result-count" class="muted"></span></div>
+    <div class="filters">
+      <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search company, symbol or sector" aria-label="Search stocks"></label>
+      <select id="setup" aria-label="Setup type"><option value="confirmed">All confirmed setups</option><option>Confirmed moves</option><option>Leaders resuming</option><option value="leaders">Established leaders</option><option>Extended / event</option><option value="all">All eligible stocks</option></select>
+      <select id="sort" aria-label="Sort stocks"><option value="rs20">Relative strength ↓</option><option value="participation">Participation ↓</option><option value="turnover_cr">Liquidity ↓</option><option value="newest">First detected ↓</option><option value="momentum_12_1">Long-term momentum ↓</option></select>
+      <select id="review-filter" aria-label="Review status"><option value="active">Hide dismissed</option><option value="unreviewed">Not reviewed</option><option value="reviewed">Reviewed</option><option value="dismissed">Dismissed</option><option value="all">All review states</option></select>
+    </div>
+    <div id="theme-filter" class="filter-chip" hidden></div>
+    <div class="table-wrap"><table><thead><tr><th>Company / setup</th><th>Last close</th><th>5 sessions</th><th>vs Nifty · 20D</th><th>Participation</th><th>From breakout</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="stock-rows"></tbody></table></div>
+    <div id="empty" class="empty" hidden></div><div class="list-footer"><span>Sorted for review, not by a predicted win probability.</span><button class="text-button" id="show-all" hidden>Show all matching stocks →</button></div>
+  </section>
+  <section id="themes-section" class="section" hidden><div class="section-heading"><div><span class="eyebrow">LOOK BEYOND ONE HEAVYWEIGHT</span><h2>Participation across the group</h2></div><select id="taxonomy" aria-label="Theme taxonomy"><option value="Curated theme">Curated themes</option><option value="Industry">Industry groups</option></select></div><p class="section-note">Median member returns and the share above their 50-session average. Changes compare the same eligible members with five sessions ago. Groups overlap; they are not independent signals.</p><div id="theme-grid" class="theme-grid"></div></section>
+  <section id="evidence-section" class="section" hidden><div class="section-heading"><div><span class="eyebrow">LET THE RECORD ACCUMULATE</span><h2>What happened after detection?</h2></div></div><p class="section-note">These are new rules, not the retired Sector-data models. Outcomes start at the next session’s open. Net returns assume 0.5% round-trip dealing costs; real execution can differ. Observations overlap and do not constitute a portfolio backtest.</p><div id="evidence-summary"></div><h3>Detection journal</h3><div id="journal"></div></section>
+  <footer><span id="coverage-note">Completed sessions only. No pre-breakout candidates.</span><button class="text-button" id="quality-open">Data & methodology</button><span>Research support, not a buy recommendation.</span></footer>
+</main>
+<dialog id="stock-dialog"><div class="dialog-top"><div><span class="eyebrow" id="detail-sector"></span><h2 id="detail-name"></h2><div id="detail-label" class="muted"></div></div><button class="icon-button close-dialog" aria-label="Close stock details">✕</button></div><div id="detail-content"></div></dialog>
+<dialog id="method-dialog"><div class="dialog-top"><div><span class="eyebrow">CLEAR RULES. VISIBLE LIMITATIONS.</span><h2>How Stocks works</h2></div><button class="icon-button close-dialog" aria-label="Close methodology">✕</button></div><div class="method-body"><h3>Confirmed moves</h3><p>A close above the prior 60-session high, followed by at least one more close holding that same level. The crossing must be within the last five sessions. Price must be above its rising 20-session average and its 50-session average, with a positive five-session return and positive 20-session relative performance against Nifty 50.</p><h3>Leaders resuming</h3><p>A prior advance of at least 10%, followed by a ten-session consolidation no wider than 12% with at least three down closes, then a move above the prior 20-session high that holds for at least two closes. Positive 60-session relative strength is also required.</p><h3>Participation and chase risk</h3><p>Recent five-session median cash turnover must be at least 1.2× the preceding twenty sessions. The last three closes must average at least 55% of their daily ranges. Both lists require at least ₹2 crore median daily turnover over sixty sessions and nearly continuous trading. Moves more than 8% beyond the breakout, 12% above the 20-session average, 15% over five sessions, or with a daily move above 15% are moved out of the confirmed lists for separate review.</p><h3>Established leaders</h3><p>The top decile of eligible stocks by return from 252 sessions ago to 21 sessions ago, excluding the latest month. This is descriptive context, with no claim that the different formula tested in Sector-data validates this version.</p><h3>What a label means</h3><p>Confirmation is observed price behaviour, not a guarantee of further upside. These initial thresholds are explicit research hypotheses. Theme labels describe breadth and relative performance; they do not gate stock selection. Stocks are ordered by relative strength, then participation, not an opaque score.</p><h3>Data and personal workspace</h3><div id="quality-detail"></div><p>Only completed sessions are used. Adjusted prices measure performance; unadjusted close × volume estimates cash turnover. Historical theme memberships and registry coverage are not point-in-time. ASM/GSM, circuit restrictions, news and actual execution remain manual checks.</p><p>Watchlists, review decisions and notes are saved only in this browser. Export a backup to move devices. Your notes are not committed to the public repository.</p><p><a href="docs/METHODOLOGY.md" target="_blank" rel="noopener">Read the full specification ↗</a> · <a href="https://github.com/jalanaditya30/Stocks" target="_blank" rel="noopener">Repository ↗</a></p></div></dialog>
+<div id="toast" role="status" class="toast" hidden></div>
+</body></html>
