@@ -1,1 +1,1 @@
-{"status":"pending","message":"Waiting for the first scheduled or manual refresh."}
+{"status":"error","checked_at":"2026-09-18T19:24:25.052135+00:00","message":"Benchmark unavailable; prior snapshot preserved","note":"Previous successful snapshot retained."}
