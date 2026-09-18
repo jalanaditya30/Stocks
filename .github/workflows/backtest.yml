@@ -6,6 +6,7 @@ on:
     paths: ['pipeline/backtest.py', 'research/PROTOCOL.md', '.github/workflows/backtest.yml']
 permissions:
   contents: write
+  actions: read
 concurrency:
   group: stocks-five-year-research
   cancel-in-progress: false
@@ -20,11 +21,19 @@ jobs:
         with: {python-version: '3.12', cache: pip}
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -s tests -v
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: tmp/backtest-prices
           key: historical-inputs-v1-${{ github.run_id }}
           restore-keys: historical-inputs-v1-
+      - name: Recover frozen inputs from the initial diagnostic run
+        if: github.run_number == 2
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 35387013337
+          name: historical-inputs-and-results
+          path: .
       - name: Replay five years and evaluate untouched holdout
         run: python -m pipeline.backtest --cached
       - name: Save research report
@@ -49,3 +58,8 @@ jobs:
             tmp/backtest-prices/
             data/backtest/
           retention-days: 90
+      - uses: actions/cache/save@v4
+        if: always() && hashFiles('tmp/backtest-prices/requested.json') != ''
+        with:
+          path: tmp/backtest-prices
+          key: historical-inputs-v1-${{ github.run_id }}

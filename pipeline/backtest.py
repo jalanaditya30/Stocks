@@ -195,7 +195,10 @@ def portfolio(records,frames,b,start,end,variant='baseline'):
     # Liquidation assumption for remaining holdings; stale marks counted explicitly.
     final=float(cash.sum()+sum(p['shares']*p['mark']*.9975 for p in positions if p));equity[-1]=final
     curve=np.array([1.]+equity);years=(days[-1]-days[0]).days/365.25
-    benchmark=(b.loc[days,'Close']/b.loc[days[0],'Open']).to_numpy(float)
+    benchmark_missing=int(b.loc[days,'Close'].isna().sum())
+    # A buy-and-hold position is merely marked at its last available close on
+    # a missing quote day. Individual trade comparisons never fill gaps.
+    benchmark=(b.loc[days,'Close'].ffill()/b.loc[days[0],'Open']).to_numpy(float)
     growth=1.02**((days-days[0]).days.to_numpy()/365.25)
     dd=lambda a:float(np.min(a/np.maximum.accumulate(a)-1)*100)
     return {'trades':trades,'cagr':round((final**(1/years)-1)*100,2),
@@ -203,6 +206,7 @@ def portfolio(records,frames,b,start,end,variant='baseline'):
         'benchmark_cagr_yield_adjusted':round(((benchmark[-1]*growth[-1])**(1/years)-1)*100,2),
         'max_drawdown':round(dd(curve),2),'benchmark_max_drawdown':round(dd(np.r_[1,benchmark]),2),
         'average_exposure':round(float(np.mean(exposure))*100,1),'missing_price_marks':missing_marks,
+        'benchmark_missing_marks':benchmark_missing,
         'unresolved_exit_positions':sum(p is not None and p['exit']<=days[-1] for p in positions),
         'curve':[{'date':str(day.date()),'strategy':round(float(e)*100,3),'benchmark':round(float(bv)*100,3)} for day,e,bv in zip(days,equity,benchmark)]}
 
@@ -229,8 +233,14 @@ def run():
     b=frames[cfg['benchmark']];mid=frames[BENCH]
     end=min(b.index[-1],mid.index[-1]);start=end-pd.DateOffset(years=5)
     b=b.loc[:end];mid=mid.reindex(b.index)
-    if b.index[0]>start-pd.DateOffset(years=1) or mid.loc[start:end,'Close'].isna().any() or mid.Close.first_valid_index()>start-pd.DateOffset(years=1):
-        raise RuntimeError('Benchmark history does not cover five complete years plus warmup without gaps')
+    benchmark_gaps=[str(x.date()) for x in mid.loc[start:end].index[mid.loc[start:end,'Close'].isna()]]
+    print('Benchmark missing sessions:',benchmark_gaps,flush=True)
+    if b.index[0]>start-pd.DateOffset(years=1) or mid.Close.first_valid_index()>start-pd.DateOffset(years=1):
+        raise RuntimeError('Benchmark history does not cover five years plus one warmup year')
+    if len(benchmark_gaps)>len(mid.loc[start:end])*.01:
+        raise RuntimeError('Benchmark is missing more than 1% of historical sessions')
+    if mid.loc[start:end].iloc[0][['Open','Close']].isna().any():
+        raise RuntimeError('The initial benchmark purchase price is missing')
     dev_end=start+pd.DateOffset(years=3)-pd.Timedelta(days=1)
     val_start=dev_end+pd.Timedelta(days=1);val_end=start+pd.DateOffset(years=4)-pd.Timedelta(days=1)
     hold_start=val_end+pd.Timedelta(days=1)
@@ -260,6 +270,7 @@ def run():
         'conclusion':'Positive holdout evidence, subject to material survivorship and execution limitations.' if supported else 'The holdout does not establish reliable index-beating performance. Do not treat confirmation as a profitable edge.',
         'variants':variants,'results':results,'annual':annual,'setups':setups,'portfolios':ports,
         'coverage':{'registry':len(universe),'downloaded':len(frames)-2,'missing_symbols':missing_symbols,
+                    'benchmark_missing_sessions':benchmark_gaps,
                     'daily_min_eligible':int(eligible.loc[start:end].min()),'daily_median_eligible':int(eligible.loc[start:end].median()),
                     'episodes':len(records),'input_manifest_sha256':hashlib.sha256(json.dumps(manifests,sort_keys=True).encode()).hexdigest()},
         'limitations':['Current surviving registry; not point-in-time exchange membership. Delisted and failed firms may be missing.',
@@ -267,6 +278,7 @@ def run():
             'Next-open execution is an assumption; circuit limits, surveillance restrictions and capacity are not reconstructed.',
             'Industry caps use current classifications. Historical classifications are unavailable.',
             'Yahoo historical revisions and corporate-action errors may remain. Raw inputs are retained as a workflow artifact.',
+            'Missing benchmark quotes leave trade comparisons unresolved. The buy-and-hold curve carries the last observed mark on those dates.',
             'Historical replay assumes data were available after each close; actual publication delays are not reconstructed.',
             'MFE is the best subsequent high, not a sell rule or an achievable realised return.',
             'Month-block intervals address some clustering but do not eliminate survivorship bias or model-selection uncertainty.']}
