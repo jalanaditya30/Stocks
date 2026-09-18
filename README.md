@@ -17,6 +17,10 @@ The initial thresholds are **new research hypotheses**, not validated trading si
 
 ## Publish on GitHub Pages
 
+Live workspace: https://jalanaditya30.github.io/Stocks/
+
+The current branch-based Pages site works too: on this domain the app reads market data directly from the public `main/data/` files, so bot refreshes do not depend on a Pages rebuild. The Actions deployment below is optional.
+
 1. In this repository, open **Settings → Pages**.
 2. Under **Build and deployment**, choose **Source: GitHub Actions**.
 3. Open **Actions → Publish Stocks website → Run workflow** on `main`.
@@ -32,6 +36,7 @@ No example stocks are shipped as live data. Until the first successful scan, the
 ```bash
 python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
+# Optional frontend checks (Node 24): npm ci && npm test
 python -m pipeline.refresh
 python -m http.server 8080
 ```

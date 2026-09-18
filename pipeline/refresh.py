@@ -66,6 +66,8 @@ def fetch(tickers, asof):
                             raw_latest=str(frame.index[-1]) if not frame.empty else 'empty'
                             valid_latest=str(d.index[-1].date()) if d is not None else 'none'
                             print(f'{t}: expected {asof}, provider latest {raw_latest}, valid latest {valid_latest}',flush=True)
+                            if t=='^NSEI' and not frame.empty:
+                                print('Benchmark provider bar:',frame.tail(1).to_json(orient='records'),flush=True)
                     except (KeyError,ValueError,TypeError) as exc:
                         print(f'{t}: unusable response ({type(exc).__name__}: {exc})',flush=True)
                         continue

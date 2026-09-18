@@ -1,4 +1,6 @@
 'use strict';
+// Read the committed data directly on Pages so scheduled bot commits need no site rebuild.
+const DATA_ROOT=location.hostname==='jalanaditya30.github.io'?'https://raw.githubusercontent.com/jalanaditya30/Stocks/main/data/':'data/';
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=(v,d=1)=>v==null||!Number.isFinite(Number(v))?'—':Number(v).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d});
@@ -104,10 +106,10 @@ async function openStock(id){const r=stockById(id);if(!r){toast('This stock is o
  $('detail-watch').onclick=()=>{setPref(id,{watch:!watched(id),symbol:r.symbol});$('detail-watch').textContent=watched(id)?'★ Saved to watchlist':'☆ Add to watchlist';render();};
  $('stock-note').oninput=e=>setPref(id,{note:e.target.value,symbol:r.symbol});
  document.querySelectorAll('[data-review]').forEach(b=>b.onclick=()=>{setPref(id,{review:b.dataset.review,symbol:r.symbol});document.querySelectorAll('[data-review]').forEach(x=>x.classList.toggle('selected',x.dataset.review===b.dataset.review));render();toast('Review status saved.');});
- try{if(!charts){const response=await fetch('data/charts.json',{cache:'no-store'});if(!response.ok)throw Error('Chart feed unavailable');charts=await response.json();}if(detail!==id)return;if(charts.asof!==D.asof)throw Error('Chart and scan sessions differ. Reload the snapshot.');$('detail-chart').innerHTML=chartMarkup(charts.charts[id],r);}catch(e){if(detail===id)$('detail-chart').textContent=e.message;}
+ try{if(!charts){const response=await fetch(DATA_ROOT+'charts.json',{cache:'no-store'});if(!response.ok)throw Error('Chart feed unavailable');charts=await response.json();}if(detail!==id)return;if(charts.asof!==D.asof)throw Error('Chart and scan sessions differ. Reload the snapshot.');$('detail-chart').innerHTML=chartMarkup(charts.charts[id],r);}catch(e){if(detail===id)$('detail-chart').textContent=e.message;}
 }
 
-async function load(){try{const [snapshot,status]=await Promise.all([fetch('data/latest.json',{cache:'no-store'}),fetch('data/health.json',{cache:'no-store'}).catch(()=>null)]);if(!snapshot.ok)throw Error('Market snapshot unavailable');const next=await snapshot.json();if(next.schema!==1||!Array.isArray(next.rows)||!Array.isArray(next.themes))throw Error('Unsupported market snapshot');D=next;health=status?.ok?await status.json():{};charts=null;render();}catch(e){$('health').hidden=false;$('health').textContent=`Could not load market data: ${e.message}. Try reload. No fresh signals are being inferred.`;renderStocks();}}
+async function load(){try{const [snapshot,status]=await Promise.all([fetch(DATA_ROOT+'latest.json',{cache:'no-store'}),fetch(DATA_ROOT+'health.json',{cache:'no-store'}).catch(()=>null)]);if(!snapshot.ok)throw Error('Market snapshot unavailable');const next=await snapshot.json();if(next.schema!==1||!Array.isArray(next.rows)||!Array.isArray(next.themes))throw Error('Unsupported market snapshot');D=next;health=status?.ok?await status.json():{};charts=null;render();}catch(e){$('health').hidden=false;$('health').textContent=`Could not load market data: ${e.message}. Try reload. No fresh signals are being inferred.`;renderStocks();}}
 
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>changeView(b.dataset.view));
 for(const id of ['search','setup','sort','review-filter'])$(id).addEventListener('input',()=>{all=false;renderStocks();});
