@@ -81,6 +81,18 @@ def fetch(tickers, asof, require_current=True, period='2y'):
     return out
 
 
+def select_session(universe,frames,benchmark,expected,minimum,max_lag=3):
+    """Most recent adequately covered session; never mix dates within a scan."""
+    sessions=mcal.get_calendar('NSE').schedule(
+        start_date=pd.Timestamp(expected)-pd.Timedelta(days=20),end_date=expected).index
+    allowed=set(sessions[-max_lag-1:])
+    for day in reversed(benchmark.index):
+        if day not in allowed:continue
+        fresh=sum(r['yahoo'] in frames and day in frames[r['yahoo']].index for r in universe)
+        if fresh/len(universe)>=minimum:return str(day.date())
+    raise RuntimeError(f'No common session within {max_lag} exchange sessions meets {minimum:.0%} price coverage')
+
+
 def track(ledger, rows, frames, benchmark, asof, cfg, record=True):
     """First detection is immutable; next-session open is the executable baseline."""
     known={x['id'] for x in ledger}
@@ -217,17 +229,13 @@ def main():
     # Benchmark first: abort before thousands of calls if the provider is down.
     frames=fetch([cfg['benchmark']],asof,require_current=False)
     if cfg['benchmark'] not in frames:raise RuntimeError('Benchmark unavailable; prior snapshot preserved')
-    available=str(frames[cfg['benchmark']].index[-1].date())
-    if available!=expected:
-        sessions=mcal.get_calendar('NSE').schedule(start_date=available,end_date=expected)
-        if len(sessions)>2:raise RuntimeError(f'Benchmark delayed beyond one exchange session: {available}; expected {expected}')
-        # Show a dated, complete historical snapshot without recording new live detections.
-        asof=available
-        history=DATA/'history'/cfg['version']/f'{asof}.json'
+    tickers=list(dict.fromkeys([r['yahoo'] for r in universe]+[r['yahoo'] for r in ledger]))
+    frames.update(fetch(tickers,asof,require_current=False))
+    asof=select_session(universe,frames,frames[cfg['benchmark']],expected,cfg['min_coverage'])
+    history=DATA/'history'/cfg['version']/f'{asof}.json'
+    frames={t:d.loc[:asof] for t,d in frames.items() if not d.loc[:asof].empty}
     previous=read(DATA/'latest.json',{})
     if previous.get('asof') and previous['asof']>asof:raise RuntimeError('Refusing to replace a newer snapshot')
-    tickers=list(dict.fromkeys([r['yahoo'] for r in universe]+[r['yahoo'] for r in ledger]))
-    frames.update(fetch(tickers,asof))
     current=asof==expected
     payload,charts,ledger=build(universe,frames,asof,cfg,read(ROOT/'config/themes.json',[]),ledger,current and not history.exists())
     payload['expected_session']=expected
@@ -246,7 +254,7 @@ def main():
     write(DATA/'latest.json',payload)
     write(DATA/'health.json',{'status':'ok' if current else 'delayed','asof':asof,
         'expected_session':expected,'message':None if current else
-        f'Provider benchmark close is incomplete for {expected}. Showing {asof}; no new live detections recorded.',
+        f'Provider coverage is incomplete for {expected}. Showing the common completed session {asof}; no new live detections recorded.',
         'checked_at':datetime.now(timezone.utc).isoformat()})
     print(f"Published {asof}: {len(payload['rows'])} eligible, {sum(r['candidate'] for r in payload['rows'])} confirmed setups",flush=True)
 

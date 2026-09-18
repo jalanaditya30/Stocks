@@ -70,3 +70,19 @@ The registry is a curated subset of NSE securities, not a maintained full-exchan
 Any rule change must increment `config/model.json`'s version and be documented. Do not retune a rule because a few recent charts look attractive. Keep old detection records and report results by model version. Nifty 50 is the explicit comparison benchmark; this does not establish smallcap- or sector-adjusted alpha.
 
 Source assets: [jalanaditya30/Sector-data](https://github.com/jalanaditya30/Sector-data), copied with the owner's authorization. Existing historical strategy results have not been transferred as validation of this new app.
+
+## Five-year historical evaluation
+
+Open **Evidence** in the app for published results. The first run is started by the research implementation commit; subsequent runs can be requested under **Actions → Five-year historical evaluation**. It downloads seven years to supply a five-year evaluation plus trailing warmup.
+
+The [frozen protocol](research/PROTOCOL.md) specifies next-open entries, costs, Nifty Midcap 150 comparison, chronological development/validation/holdout periods, three limited alternatives, and a finite-capital portfolio. The research code is tested against the live detector for identical past-only signals. A selected historical filter is not automatically promoted into live rules.
+
+```bash
+python -m pipeline.backtest
+# Reuse inputs only when collected for the same expected market session:
+python -m pipeline.backtest --cached
+```
+
+Results and every historical observation are committed under `data/backtest/`. Downloaded price histories and their hashes are kept in the workflow artifact for 90 days. No historical accuracy is displayed before a successful report exists. The inherited surviving-stock registry and price-only benchmark limit the conclusions; these limitations are displayed beside the results.
+
+`npm ci && npm test` checks the frontend interactions with synthetic fixtures that are never published as live prices. Python regression tests include agreement between vectorised historical rules and the live scanner, no future-price influence on prior signals, missing-price handling, entry timing, and holdout-independent selection.

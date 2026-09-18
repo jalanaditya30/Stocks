@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from pipeline.engine import normalized, analyze, crossed_and_held, theme_summary
-from pipeline.refresh import build, track, expected_session
+from pipeline.refresh import build, track, expected_session, select_session
 
 CFG=json.loads((Path(__file__).resolve().parents[1]/'config/model.json').read_text())
 META={'isin':'INE000000001','nse':'TEST','yahoo':'TEST.NS','name':'Test company','industry_group':'Test industry'}
@@ -111,6 +111,14 @@ class PublicationAndTrackingTests(unittest.TestCase):
         universe=[META,{**META,'isin':'INE000000002','yahoo':'MISS.NS'}]
         with self.assertRaisesRegex(RuntimeError,'coverage'):
             build(universe,self.frames,self.asof,CFG,[],[])
+
+    def test_delayed_snapshot_uses_one_common_date_without_weakening_coverage(self):
+        frames={**self.frames,'OTHER.NS':self.frames['TEST.NS'].iloc[:-1]}
+        universe=[META,{**META,'yahoo':'OTHER.NS'}]
+        chosen=select_session(universe,frames,frames['^NSEI'],self.asof,.85)
+        self.assertEqual(chosen,str(frames['OTHER.NS'].index[-1].date()))
+        frames['OTHER.NS']=frames['OTHER.NS'].iloc[:-10]
+        with self.assertRaises(RuntimeError):select_session(universe,frames,frames['^NSEI'],self.asof,.85)
 
     def test_no_same_close_profit_and_no_duplicate_detection(self):
         ledger,tracking,summary=track([], [self.row],self.frames,self.frames['^NSEI'],self.asof,CFG)

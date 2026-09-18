@@ -78,4 +78,4 @@ This release implements the daily workspace, transparent confirmation hypotheses
 
 An ongoing setup is recorded once per stock, setup type and model. A later crossing is a new observation only after an intervening close below the previous breakout reference. Completed forward observations are stored permanently; a later provider outage or rolling history limit does not erase them.
 
-If the provider has an incomplete benchmark bar, the app may show the previous complete exchange session, with a prominent delayed-data warning. A lagged snapshot never records new live detections and cannot overwrite a newer snapshot. A delay longer than one exchange session is rejected. No missing benchmark close is fabricated.
+If the provider has incomplete bars, the app may show the most recent common complete exchange session within three exchange sessions, still requiring 85% registry coverage, with a prominent delayed-data warning. A lagged snapshot never records new live detections and cannot overwrite a newer snapshot. A delay longer than three exchange sessions is rejected. No missing benchmark close is fabricated.
