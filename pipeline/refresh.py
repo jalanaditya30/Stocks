@@ -62,7 +62,12 @@ def fetch(tickers, asof):
                         d = normalized(frame,asof)
                         if d is not None and str(d.index[-1].date())==asof:
                             out[t]=d
-                    except (KeyError,ValueError,TypeError):
+                        else:
+                            raw_latest=str(frame.index[-1]) if not frame.empty else 'empty'
+                            valid_latest=str(d.index[-1].date()) if d is not None else 'none'
+                            print(f'{t}: expected {asof}, provider latest {raw_latest}, valid latest {valid_latest}',flush=True)
+                    except (KeyError,ValueError,TypeError) as exc:
+                        print(f'{t}: unusable response ({type(exc).__name__}: {exc})',flush=True)
                         continue
             except Exception as exc:
                 print('batch unavailable:',type(exc).__name__,flush=True)

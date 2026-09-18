@@ -1,0 +1,6 @@
+{
+  "name": "stocks-research-workspace",
+  "private": true,
+  "scripts": {"test": "node tests/test_ui.cjs"},
+  "devDependencies": {"jsdom": "30.1.0"}
+}
