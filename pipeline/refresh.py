@@ -45,7 +45,7 @@ def expected_session(now=None):
     return str(closed.index[-1].date())
 
 
-def fetch(tickers, asof):
+def fetch(tickers, asof, require_current=True, period='2y'):
     out = {}
     # Small batches, a single shared pull, and one retry for missing symbols.
     for attempt in range(2):
@@ -54,13 +54,13 @@ def fetch(tickers, asof):
             chunk = pending[start:start+30]
             print(f"fetch pass {attempt+1}: {start+1}-{start+len(chunk)}/{len(pending)}",flush=True)
             try:
-                raw = yf.download(chunk,period='2y',auto_adjust=False,
+                raw = yf.download(chunk,period=period,auto_adjust=False,
                                   group_by='ticker',progress=False,threads=4,timeout=20)
                 for t in chunk:
                     try:
                         frame = raw[t] if isinstance(raw.columns,pd.MultiIndex) else raw
                         d = normalized(frame,asof)
-                        if d is not None and str(d.index[-1].date())==asof:
+                        if d is not None and (not require_current or str(d.index[-1].date())==asof):
                             out[t]=d
                         else:
                             raw_latest=str(frame.index[-1]) if not frame.empty else 'empty'
@@ -210,28 +210,44 @@ def main():
     universe=[r for r in csv.DictReader(open(ROOT/'config/universe.csv')) if r['isin'] and r['nse'] and r['yahoo'].endswith('.NS')]
     if len({r['isin'] for r in universe})!=len(universe):raise RuntimeError('Duplicate ISINs in registry')
     if args.limit:universe=universe[:args.limit]
-    asof=expected_session()
+    expected=expected_session()
+    asof=expected
     history=DATA/'history'/cfg['version']/f'{asof}.json'
     ledger=read(DATA/'ledger.json',[])
     # Benchmark first: abort before thousands of calls if the provider is down.
-    frames=fetch([cfg['benchmark']],asof)
+    frames=fetch([cfg['benchmark']],asof,require_current=False)
     if cfg['benchmark'] not in frames:raise RuntimeError('Benchmark unavailable; prior snapshot preserved')
+    available=str(frames[cfg['benchmark']].index[-1].date())
+    if available!=expected:
+        sessions=mcal.get_calendar('NSE').schedule(start_date=available,end_date=expected)
+        if len(sessions)>2:raise RuntimeError(f'Benchmark delayed beyond one exchange session: {available}; expected {expected}')
+        # Show a dated, complete historical snapshot without recording new live detections.
+        asof=available
+        history=DATA/'history'/cfg['version']/f'{asof}.json'
+    previous=read(DATA/'latest.json',{})
+    if previous.get('asof') and previous['asof']>asof:raise RuntimeError('Refusing to replace a newer snapshot')
     tickers=list(dict.fromkeys([r['yahoo'] for r in universe]+[r['yahoo'] for r in ledger]))
     frames.update(fetch(tickers,asof))
-    payload,charts,ledger=build(universe,frames,asof,cfg,read(ROOT/'config/themes.json',[]),ledger,not history.exists())
+    current=asof==expected
+    payload,charts,ledger=build(universe,frames,asof,cfg,read(ROOT/'config/themes.json',[]),ledger,current and not history.exists())
+    payload['expected_session']=expected
+    payload['freshness']='current' if current else 'delayed'
     if args.limit:
         # Test runs cannot replace the production universe or its records.
         write(ROOT/'tmp/limited-scan.json',payload)
         return
     # A first successful daily snapshot is immutable, including a model version.
-    if not history.exists():
+    if current and not history.exists():
         write(history,{'asof':asof,'model':cfg['version'],'generated':payload['generated'],
                        'candidates':[r for r in payload['rows'] if r['candidate']],
                        'themes':payload['themes'],'coverage':payload['coverage']})
     write(DATA/'ledger.json',ledger)
     write(DATA/'charts.json',charts)
     write(DATA/'latest.json',payload)
-    write(DATA/'health.json',{'status':'ok','asof':asof,'checked_at':datetime.now(timezone.utc).isoformat()})
+    write(DATA/'health.json',{'status':'ok' if current else 'delayed','asof':asof,
+        'expected_session':expected,'message':None if current else
+        f'Provider benchmark close is incomplete for {expected}. Showing {asof}; no new live detections recorded.',
+        'checked_at':datetime.now(timezone.utc).isoformat()})
     print(f"Published {asof}: {len(payload['rows'])} eligible, {sum(r['candidate'] for r in payload['rows'])} confirmed setups",flush=True)
 
 

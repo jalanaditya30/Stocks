@@ -77,3 +77,5 @@ Do not claim validated alpha or guaranteed upside. Do not resurrect retired R2/R
 This release implements the daily workspace, transparent confirmation hypotheses and prospective measurement infrastructure. It does not implement automated fundamental/news research, exchange surveillance clearance, broker execution, notifications, cloud watchlist synchronization or retrospective proof of performance.
 
 An ongoing setup is recorded once per stock, setup type and model. A later crossing is a new observation only after an intervening close below the previous breakout reference. Completed forward observations are stored permanently; a later provider outage or rolling history limit does not erase them.
+
+If the provider has an incomplete benchmark bar, the app may show the previous complete exchange session, with a prominent delayed-data warning. A lagged snapshot never records new live detections and cannot overwrite a newer snapshot. A delay longer than one exchange session is rejected. No missing benchmark close is fabricated.
