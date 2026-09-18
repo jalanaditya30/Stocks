@@ -11,13 +11,14 @@ class HistoricalTests(unittest.TestCase):
         raw,bench,asof=fixture(500)
         rng=np.random.default_rng(19)
         c=100*np.exp(np.cumsum(rng.normal(.001,.016,500)))
-        for k,delta in [('Open',-.003),('High',.01),('Low',-.012),('Close',0),('Adj Close',0)]:raw[k]=c*(1+delta)
+        for k,delta in [('Open',-.003),('High',.008),('Low',-.012),('Close',0),('Adj Close',0)]:raw[k]=c*(1+delta)
         raw['Volume']=rng.uniform(1e6,4e6,500)
         self.d=normalized(raw,asof);self.b=normalized(bench,asof)
 
     def test_vectorized_signals_match_live_engine(self):
         f=features(self.d,self.b,CFG)
-        for i in range(130,500,3):
+        self.assertGreater(int(f.candidate.sum()),0)
+        for i in range(130,500):
             r,_=analyze(META,self.d.iloc[:i+1],self.b.iloc[:i+1],str(self.b.index[i].date()),CFG)
             self.assertEqual(bool(f.candidate.iloc[i]),bool(r and r['candidate']),f'date {i}')
             if r and r['candidate']:
@@ -54,5 +55,14 @@ class HistoricalTests(unittest.TestCase):
     def test_no_signals_means_cash_not_index_returns(self):
         p=portfolio([],{},self.b,str(self.b.index[130].date()),str(self.b.index[-1].date()))
         self.assertEqual(p['cagr'],0);self.assertEqual(p['trades'],0);self.assertEqual(p['average_exposure'],0)
+
+    def test_portfolio_allocates_one_sleeve_and_charges_both_sides(self):
+        i=300
+        signal={'ticker':'TEST.NS','industry':'Test industry','i':i,'signal':str(self.b.index[i].date()),
+                'symbol':'TEST','extension':2,'r5':4,'market_trend':True,'rs20':5,'participation':2}
+        p=portfolio([signal],{'TEST.NS':self.d},self.b,str(self.b.index[i].date()),str(self.b.index[i+22].date()))
+        net=outcome(self.d,self.b,i,20)['net']
+        self.assertEqual(p['trades'],1)
+        self.assertAlmostEqual(p['curve'][-1]['strategy'],100+net*.1,places=3)
 
 if __name__=='__main__':unittest.main()
