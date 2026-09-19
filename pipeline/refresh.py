@@ -49,7 +49,7 @@ def fetch(tickers, asof, require_current=True, period='2y'):
     out = {}
     # Small batches, a single shared pull, and one retry for missing symbols.
     for attempt in range(2):
-        pending = [t for t in tickers if t not in out]
+        pending = [t for t in tickers if t not in out or str(out[t].index[-1].date())!=asof]
         for start in range(0,len(pending),30):
             chunk = pending[start:start+30]
             print(f"fetch pass {attempt+1}: {start+1}-{start+len(chunk)}/{len(pending)}",flush=True)
@@ -61,7 +61,8 @@ def fetch(tickers, asof, require_current=True, period='2y'):
                         frame = raw[t] if isinstance(raw.columns,pd.MultiIndex) else raw
                         d = normalized(frame,asof)
                         if d is not None and (not require_current or str(d.index[-1].date())==asof):
-                            out[t]=d
+                            if t not in out or d.index[-1]>=out[t].index[-1]:
+                                out[t]=d
                         else:
                             raw_latest=str(frame.index[-1]) if not frame.empty else 'empty'
                             valid_latest=str(d.index[-1].date()) if d is not None else 'none'
@@ -74,7 +75,7 @@ def fetch(tickers, asof, require_current=True, period='2y'):
             except Exception as exc:
                 print('batch unavailable:',type(exc).__name__,flush=True)
             time.sleep(1)
-        if len(out)==len(tickers):
+        if all(t in out and str(out[t].index[-1].date())==asof for t in tickers):
             break
         if attempt==0:
             time.sleep(5)
@@ -95,6 +96,8 @@ def select_session(universe,frames,benchmark,expected,minimum,max_lag=3):
 
 def track(ledger, rows, frames, benchmark, asof, cfg, record=True):
     """First detection is immutable; next-session open is the executable baseline."""
+    benchmark=benchmark.loc[:asof]
+    frames={ticker:d.loc[:asof] for ticker,d in frames.items() if not d.loc[:asof].empty}
     known={x['id'] for x in ledger}
     if record:
         for r in rows:
@@ -128,22 +131,26 @@ def track(ledger, rows, frames, benchmark, asof, cfg, record=True):
         d=frames.get(signal['yahoo'])
         if d is not None:
             day=pd.Timestamp(signal['first_seen'])
-            if day in d.index:
+            current=str(d.index[-1].date())==asof
+            item['price_asof']=str(d.index[-1].date())
+            if day in d.index and current:
                 item['since_detection']=round(float((d.Close.iloc[-1]/d.loc[day,'Close']-1)*100),2)
             bd=pd.Timestamp(signal['breakout_date'])
-            if bd in d.index:
+            if bd in d.index and current:
                 p=d.index.get_loc(bd)
                 if p>=signal['window']:
                     level=float(d.High.iloc[p-signal['window']:p].max())
                     item['state']='Below breakout level' if d.Close.iloc[-1]<level else 'Holding breakout level'
             # Never award returns at the same close that generated the signal.
-            entry=int(calendar.searchsorted(day,side='right'))
+            # If the detection has rolled out of history, the next available bar
+            # must not be mistaken for its next-session entry.
+            entry=int(calendar.searchsorted(day,side='right')) if day in calendar else len(calendar)
             if entry<len(calendar) and calendar[entry] in d.index:
                 ed=calendar[entry]
                 stock_open=float(d.loc[ed,'Open']); bench_open=float(benchmark.loc[ed,'Open'])
                 item['entry_date']=str(ed.date())
                 for horizon in cfg['forward_horizons']:
-                    if str(horizon) in item['outcomes']:
+                    if item['outcomes'].get(str(horizon),{}).get('upside_version')==1:
                         continue
                     end=entry+horizon-1
                     if end<len(calendar):
@@ -155,9 +162,12 @@ def track(ledger, rows, frames, benchmark, asof, cfg, record=True):
                         br=float((benchmark.Close.iloc[end]/bench_open-1)*100)
                         # Assumed 0.5% total dealing cost, not measured execution.
                         net=float(((segment.Close.iloc[-1]/stock_open)*(1-.0025)/(1+.0025)-1)*100)
-                        item['outcomes'][str(horizon)]={'gross':round(gross,2),'net':round(net,2),
+                        outcome={'gross':round(gross,2),'net':round(net,2),
                             'benchmark':round(br,2),'excess_net':round(net-br,2),
                             'worst_excursion':round(float((segment.Low.min()/stock_open-1)*100),2)}
+                        outcome.update(upside_metrics(segment,stock_open))
+                        # Existing completed returns are immutable when adding metrics.
+                        item['outcomes'][str(horizon)]={**outcome,**item['outcomes'].get(str(horizon),{})}
         # Completed observations survive provider rolling-history limits and outages.
         signal['outcomes']=dict(item['outcomes'])
         if 'entry_date' in item:signal['entry_date']=item['entry_date']
@@ -167,9 +177,38 @@ def track(ledger, rows, frames, benchmark, asof, cfg, record=True):
         for h in cfg['forward_horizons']:
             outcomes=[r['outcomes'][str(h)] for r in result if r['setup']==setup and str(h) in r['outcomes'] and r['model']==cfg['version']]
             summary.append({'setup':setup,'horizon':h,'n':len(outcomes),
+                'total':sum(r['setup']==setup and r['model']==cfg['version'] for r in result),
+                **upside_summary(outcomes),
                 'median_net':round(float(np.median([o['net'] for o in outcomes])),2) if outcomes else None,
                 'median_excess':round(float(np.median([o['excess_net'] for o in outcomes])),2) if outcomes else None})
     return ledger,result,summary
+
+
+def upside_metrics(segment,entry):
+    """Observed opportunity, never an assumed exit at the subsequent high."""
+    out={'upside_version':1,'best_excursion':round(float((segment.High.max()/entry-1)*100),2)}
+    downside=np.flatnonzero(segment.Low.to_numpy()<=entry*.95)
+    for target in (5,10):
+        hits=np.flatnonzero(segment.High.to_numpy()>=entry*(1+target/100))
+        first=int(hits[0]) if len(hits) else None
+        out[f'reach_{target}']=first is not None
+        out[f'sessions_to_{target}']=first+1 if first is not None else None
+        # OHLC cannot establish intraday ordering if both levels occur together.
+        out[f'{target}_before_minus5']=('neither' if first is None and not len(downside) else
+            'downside_first' if first is None else 'upside_first' if not len(downside) or first<int(downside[0]) else
+            'ambiguous_same_session' if first==int(downside[0]) else 'downside_first')
+    return out
+
+
+def upside_summary(outcomes):
+    usable=[o for o in outcomes if o.get('upside_version')==1]
+    out={'upside_n':len(usable),'median_best':round(float(np.median([o['best_excursion'] for o in usable])),2) if usable else None,
+         'median_worst':round(float(np.median([o['worst_excursion'] for o in usable])),2) if usable else None}
+    for target in (5,10):
+        times=[o[f'sessions_to_{target}'] for o in usable if o[f'reach_{target}']]
+        out[f'reach_{target}_pct']=round(100*len(times)/len(usable),2) if usable else None
+        out[f'median_sessions_to_{target}']=float(np.median(times)) if times else None
+    return out
 
 
 def build(universe,frames,asof,cfg,themes,ledger,record=True):
