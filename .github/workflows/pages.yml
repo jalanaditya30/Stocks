@@ -43,7 +43,7 @@ jobs:
         run: |
           mkdir -p _site/data _site/docs
           cp index.html styles.css app.js .nojekyll _site/
-          cp data/latest.json data/health.json _site/data/
+          cp -R data/. _site/data/
           if [ -f data/charts.json ]; then cp data/charts.json _site/data/; fi
           cp docs/METHODOLOGY.md _site/docs/
       - uses: actions/configure-pages@v5
