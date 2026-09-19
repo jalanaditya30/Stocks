@@ -254,7 +254,8 @@ def attach_rotation_context(rows, themes):
     for row in rows:
         memberships=[t for t in curated if row['isin'] in t['members']]
         memberships.sort(key=lambda t:(priority.get(t['status'],9),t['rank']))
-        best=memberships[0] if memberships else industries.get(row['sector'])
+        industry=industries.get(row['sector'])
+        best=memberships[0] if memberships else industry
         row['theme_name']=best['name'] if best else None
         row['theme_state']=best['status'] if best else None
         row['theme_rank']=best['rank'] if best else None
@@ -262,7 +263,16 @@ def attach_rotation_context(rows, themes):
         row['theme_coverage']=best['coverage'] if best else None
         row['theme_coverage_quality']=best['coverage_quality'] if best else None
         row['theme_breadth_change']=best['breadth_change'] if best else None
-        row['stock_vs_theme_rs20']=round(row['rs20']-best['rs20'],2) if best and best.get('rs20') is not None else None
+        # Peer ranking is always against the stock's exchange industry. Curated
+        # themes can overlap and remain useful rotation context, but are not the
+        # stock's ranking denominator.
+        row['industry_name']=industry['name'] if industry else row['sector']
+        row['industry_state']=industry['status'] if industry else None
+        row['industry_rank']=industry['rank'] if industry else None
+        row['industry_coverage']=industry['coverage'] if industry else None
+        peer_ready=industry and industry.get('resolved',len(industry.get('members',[])))>=3
+        row['stock_vs_industry_r20']=round(row['r20']-industry['r20'],2) if peer_ready and industry.get('r20') is not None else None
+        row['stock_vs_industry_r60']=round(row['r60']-industry['r60'],2) if peer_ready and industry.get('r60') is not None else None
         row['theme_memberships']=[{'name':t['name'],'state':t['status'],'rank':t['rank']} for t in memberships]
         supportive=best and best['status'] in ['Leading','Emerging']
         weak=best and best['status'] in ['Weakening','Avoid']
@@ -298,7 +308,7 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     theme_rows=rank_themes(theme_rows,previous_themes)
     attach_rotation_context(rows,theme_rows)
     posture={'Sector-supported setup':0,'Hold / monitor':1,'Watch':2,'Review / rotate':3}
-    rows.sort(key=lambda r:(not r['candidate'],-r['rs20'],-r['participation'],
+    rows.sort(key=lambda r:(not r['candidate'],-(r['stock_vs_industry_r20'] if r['stock_vs_industry_r20'] is not None else -999),-r['participation'],
                             posture[r['rotation_posture']],r['isin']))
     ledger,tracking,summary=track(ledger,rows,frames,benchmark,asof,cfg,record)
     for row in rows:

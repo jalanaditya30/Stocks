@@ -30,13 +30,20 @@ class ConfirmationTests(unittest.TestCase):
     def test_nifty_500_is_the_versioned_benchmark(self):
         self.assertEqual(CFG['benchmark'],'^CRSLDX')
         self.assertEqual(CFG['benchmark_name'],'Nifty 500')
-        self.assertIn('nifty500',CFG['version'])
+        self.assertEqual(CFG['version'],'confirmed-v3-industry-rank')
 
     def test_held_breakout_qualifies_with_explainable_reasons(self):
         row,error=analyze(META,self.d,self.b,self.asof,CFG)
         self.assertIsNone(error);self.assertTrue(row['candidate'])
         self.assertEqual(row['setup'],'Confirmed moves')
         self.assertLess(row['anchor'],row['last']);self.assertEqual(len(row['reasons']),4)
+
+    def test_stock_can_qualify_while_lagging_a_surging_nifty_500(self):
+        benchmark=self.b.copy()
+        benchmark.loc[benchmark.index[-21:],'Close']=np.linspace(benchmark.Close.iloc[-21],140,21)
+        row,error=analyze(META,self.d,benchmark,self.asof,CFG)
+        self.assertIsNone(error);self.assertTrue(row['candidate'])
+        self.assertGreater(row['r20'],0);self.assertLess(row['rs20'],0)
 
     def test_pre_breakout_never_qualifies(self):
         self.d.iloc[-20,self.d.columns.get_loc('High')]=120

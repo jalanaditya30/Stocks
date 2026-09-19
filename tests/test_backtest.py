@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from test_pipeline import CFG,META,fixture
 from pipeline.engine import normalized,analyze
-from pipeline.backtest import features,outcome,choose,portfolio,episodes
+from pipeline.backtest import features,outcome,choose,portfolio,episodes,industry_medians
 
 class HistoricalTests(unittest.TestCase):
     def setUp(self):
@@ -56,10 +56,24 @@ class HistoricalTests(unittest.TestCase):
         p=portfolio([],{},self.b,str(self.b.index[130].date()),str(self.b.index[-1].date()))
         self.assertEqual(p['cagr'],0);self.assertEqual(p['trades'],0);self.assertEqual(p['average_exposure'],0)
 
+    def test_industry_median_requires_three_eligible_peers(self):
+        universe=[];frames={}
+        for i,multiple in enumerate([.95,1,1.05]):
+            ticker=f'TEST{i}.NS';universe.append({**META,'isin':f'INE00000000{i}','yahoo':ticker})
+            frame=self.d.copy();frame['Close']*=multiple;frame['Open']*=multiple
+            frame['High']*=multiple;frame['Low']*=multiple;frame['Adj Close']*=multiple
+            frame['CashTurnover']=frame.Close*frame.Volume/1e7;frames[ticker]=frame
+        peers=industry_medians(universe,frames,self.b,CFG)['Test industry']['r20']
+        expected=np.median([(frames[t].Close.iloc[-1]/frames[t].Close.iloc[-21]-1)*100 for t in frames])
+        self.assertAlmostEqual(peers.iloc[-1],expected)
+        peers=industry_medians(universe[:2],frames,self.b,CFG)['Test industry']['r20']
+        self.assertTrue(np.isnan(peers.iloc[-1]))
+
     def test_portfolio_allocates_one_sleeve_and_charges_both_sides(self):
         i=300
         signal={'ticker':'TEST.NS','industry':'Test industry','i':i,'signal':str(self.b.index[i].date()),
-                'symbol':'TEST','extension':2,'r5':4,'market_trend':True,'rs20':5,'participation':2}
+                'symbol':'TEST','extension':2,'r5':4,'market_trend':True,'rs20':5,
+                'stock_vs_industry_r20':3,'participation':2}
         p=portfolio([signal],{'TEST.NS':self.d},self.b,str(self.b.index[i].date()),str(self.b.index[i+22].date()))
         net=outcome(self.d,self.b,i,20)['net']
         self.assertEqual(p['trades'],1)

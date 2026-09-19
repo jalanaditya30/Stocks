@@ -31,7 +31,7 @@ def features(d,b,cfg):
     largest=r(c,1).abs().rolling(5).max()
     valid=c.notna().rolling(cfg['min_history']).sum().eq(cfg['min_history'])
     valid &= (turn>=cfg['min_turnover_cr']) & (v.gt(0).rolling(60).sum()>=55)
-    technical=(c>s20)&(s20>s50)&(s20>s20.shift(5))&(r5>0)&(rs20>0)
+    technical=(c>s20)&(s20>s50)&(s20>s20.shift(5))&(r5>0)&(r20>0)
     participation=(part>=cfg['min_participation'])&(location>=.55)
     def anchors(window,continuation):
         level=h.shift(1).rolling(window).max()
@@ -50,16 +50,37 @@ def features(d,b,cfg):
             chosen.loc[ok]=a.loc[ok];ages.loc[ok]=age
         return chosen,ages
     cont,ca=anchors(20,True);normal,na=anchors(60,False)
-    continuation=cont.notna()&(rs60>0)
+    continuation=cont.notna()&(r60>0)
     level=normal.where(~continuation,cont);age=na.where(~continuation,ca)
     extension=(c/level-1)*100
     extended=(r5>cfg['max_return_5d_pct'])|((c/s20-1)*100>cfg['max_sma_extension_pct'])|(extension>cfg['max_extension_pct'])
     candidate=valid&technical&participation&level.notna()&~extended&(largest<=cfg['event_day_pct'])
     return pd.DataFrame({'candidate':candidate,'continuation':continuation,'level':level,'age':age,
-        'r5':r5,'rs20':rs20,'participation':part,'extension':extension,'eligible':valid},index=d.index)
+        'r5':r5,'r20':r20,'r60':r60,'rs20':rs20,'rs60':rs60,
+        'participation':part,'extension':extension,'eligible':valid},index=d.index)
 
 
-def episodes(meta,d,b,cfg,start,end,midcap):
+def industry_medians(universe, frames, b, cfg):
+    """Backward-only eligible-stock return medians for each current industry."""
+    groups={}
+    for meta in universe:
+        d=frames.get(meta['yahoo'])
+        if d is None:
+            continue
+        f=features(d,b,cfg)
+        groups.setdefault(meta['industry_group'],[]).append(
+            pd.DataFrame({'r20':f.r20.where(f.eligible),'r60':f.r60.where(f.eligible)}))
+    out={}
+    for industry,parts in groups.items():
+        r20=pd.concat([x.r20 for x in parts],axis=1)
+        r60=pd.concat([x.r60 for x in parts],axis=1)
+        # Very small peer sets are unstable and therefore left unranked.
+        out[industry]={'r20':r20.median(axis=1).where(r20.count(axis=1)>=3),
+                       'r60':r60.median(axis=1).where(r60.count(axis=1)>=3)}
+    return out
+
+
+def episodes(meta,d,b,cfg,start,end,midcap,industry=None):
     f=features(d,b,cfg);aligned=d.reindex(b.index);c=aligned.Close.to_numpy();last={};records=[]
     trend=midcap.Close>midcap.Close.rolling(200).mean()
     for i in np.flatnonzero(f.candidate.to_numpy()):
@@ -71,9 +92,13 @@ def episodes(meta,d,b,cfg,start,end,midcap):
             if not np.any(segment<pl):continue
         last[setup]=(i,float(row.level))
         if not start<=b.index[i]<=end:continue
+        peer20=industry['r20'].iloc[i] if industry else np.nan
+        peer60=industry['r60'].iloc[i] if industry else np.nan
         record={'isin':meta['isin'],'symbol':meta['nse'],'ticker':meta['yahoo'],
             'industry':meta['industry_group'],'setup':setup,'signal':str(b.index[i].date()),
             'i':int(i),'rs20':float(row.rs20),'participation':float(row.participation),
+            'stock_vs_industry_r20':float(row.r20-peer20) if np.isfinite(peer20) else None,
+            'stock_vs_industry_r60':float(row.r60-peer60) if np.isfinite(peer60) else None,
             'extension':float(row.extension),'r5':float(row.r5),
             'market_trend':bool(trend.iloc[i])}
         record['outcomes']={str(h):outcome(aligned,midcap,i,h) for h in HORIZONS}
@@ -169,7 +194,7 @@ def portfolio(records,frames,b,start,end,variant='baseline'):
             events.setdefault(b.index[r['i']+1],[]).append(r)
     for day in days:
         active={p['ticker'] for p in positions if p};industries=Counter(p['industry'] for p in positions if p)
-        for r in sorted(events.get(day,[]),key=lambda x:(-x['rs20'],-x['participation'],x['symbol'])):
+        for r in sorted(events.get(day,[]),key=lambda x:(-(x.get('stock_vs_industry_r20') if x.get('stock_vs_industry_r20') is not None else -999),-x['participation'],-x['rs20'],x['symbol'])):
             if r['ticker'] in active or industries[r['industry']]>=2:continue
             free=next((j for j,p in enumerate(positions) if p is None),None)
             if free is None:break
@@ -249,11 +274,12 @@ def run():
     hold_start=val_end+pd.Timedelta(days=1)
     ranges={'full':(str(start.date()),str(end.date())),'development':(str(start.date()),str(dev_end.date())),
             'validation':(str(val_start.date()),str(val_end.date())),'holdout':(str(hold_start.date()),str(end.date()))}
+    peers=industry_medians(universe,frames,b,cfg)
     records=[];eligible=pd.Series(0,index=b.index);missing_symbols=[]
     for n,meta in enumerate(universe):
         d=frames.get(meta['yahoo'])
         if d is None:missing_symbols.append(meta['nse']);continue
-        rs,e=episodes(meta,d,b,cfg,start,end,mid);records.extend(rs);eligible+=e.astype(int)
+        rs,e=episodes(meta,d,b,cfg,start,end,mid,peers.get(meta['industry_group']));records.extend(rs);eligible+=e.astype(int)
         if n%100==0:print(f'evaluated {n+1}/{len(universe)}: {len(records)} episodes',flush=True)
     if len(frames)-1<len(universe)*.85:raise RuntimeError('Historical symbol coverage below 85%; refusing a partial-universe headline result')
     variants={name:{partition:summarize(records,20,*ranges[partition],name) for partition in ['development','validation']} for name in VARIANTS}
@@ -270,6 +296,9 @@ def run():
     report={'schema':1,'status':'complete','model':cfg['version'],'generated':datetime.now(timezone.utc).isoformat(),
         'benchmark':{'name':'Nifty 500','ticker':BENCH,'type':'price index','dividend_sensitivity':'Additional 2% annual benchmark yield; not an official TRI'},
         'ranges':ranges,'selected_variant':chosen,'holdout_supports_candidate':supported,
+        'selection':{'stock_qualification':'absolute price trend and confirmed move',
+                     'candidate_ranking':'20-session stock return minus eligible industry median',
+                     'benchmark_scope':'market regime, sector context, and portfolio outcome comparison'},
         'conclusion':'Positive holdout evidence, subject to material survivorship and execution limitations.' if supported else 'The holdout does not establish reliable index-beating performance. Do not treat confirmation as a profitable edge.',
         'variants':variants,'results':results,'annual':annual,'setups':setups,'portfolios':ports,
         'coverage':{'registry':len(universe),'downloaded':len(frames)-1,'missing_symbols':missing_symbols,

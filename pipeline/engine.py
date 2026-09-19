@@ -193,12 +193,14 @@ def analyze(meta, d, benchmark, asof, cfg):
     ind=momentum_indicators(d,cfg)
     long_momentum = float((c[-22]/c[-253]-1)*100) if len(c)>=253 else None
     # Continuation receives its own label, and cannot be mistaken for a first move.
-    anchor = crossed_and_held(d,20,cfg,True) if rs60>0 else None
+    anchor = crossed_and_held(d,20,cfg,True) if r60>0 else None
     kind = 'Leaders resuming' if anchor else 'Confirmed moves'
     if anchor is None:
         anchor = crossed_and_held(d,60,cfg)
     extension = float((c[-1]/anchor['level']-1)*100) if anchor else None
-    technical_ok = c[-1]>sma20>sma50 and slope>0 and r5>0 and rs20>0
+    # A stock qualifies on its own price trend. Nifty 500 relative returns are
+    # retained as market context, but are deliberately not a stock-level gate.
+    technical_ok = c[-1]>sma20>sma50 and slope>0 and r5>0 and r20>0
     participation_ok = participation>=cfg['min_participation'] and location>=.55
     extended = (r5>cfg['max_return_5d_pct'] or
                 (c[-1]/sma20-1)*100>cfg['max_sma_extension_pct'] or
@@ -210,17 +212,16 @@ def analyze(meta, d, benchmark, asof, cfg):
             'Efficient advance':ind['efficiency_20']>=.25}
     if candidate: stage='Trend continuation' if kind=='Leaders resuming' else 'Confirmed move'
     elif anchor and (extended or event):stage='Extended / event'
-    elif ind['vstop_bullish'] and c[-1]>sma20 and rs20>0:stage='Trend intact'
+    elif ind['vstop_bullish'] and c[-1]>sma20 and r20>0:stage='Trend intact'
     elif ind['vstop_bullish'] and c[-1]>sma50:stage='Pullback / trend intact'
-    elif not ind['vstop_bullish'] and rs20<0:stage='Momentum weakening'
+    elif not ind['vstop_bullish'] and r20<0:stage='Momentum weakening'
     else:stage='Mixed'
     reasons, risks = [], []
     if anchor:
         reasons.append(f"Held above the prior {anchor['window']}-session high for {anchor['held_sessions']} closes")
     if technical_ok:
         reasons.append('Above rising 20-session and 50-session averages; positive 5-session move')
-    benchmark_name=cfg.get('benchmark_name','Nifty 500')
-    reasons += [f"20-session return exceeds {benchmark_name} by {rs20:.1f}%",
+    reasons += [f"Absolute 20-session return is {r20:.1f}%",
                 f"Recent median cash turnover is {participation:.2f}× its earlier baseline"]
     if event: risks.append('Large single-session move; investigate the event')
     if extended: risks.append('Extended from the breakout or short-term trend; chase risk')

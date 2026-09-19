@@ -1,6 +1,6 @@
 # Stocks — moves with follow-through
 
-A daily Indian-equity research workspace for **confirmed moves** and **leaders resuming**. Pre-breakout candidates are deliberately excluded. The site explains why a stock appeared, the level it has held, its relative strength and participation, and what could weaken the interpretation.
+A daily Indian-equity research workspace for **confirmed moves** and **leaders resuming**. Pre-breakout candidates are deliberately excluded. Stocks qualify on their own absolute price trend and confirmation, then are ranked against eligible peers in their own industry. Nifty 500 supplies broad market, sector and outcome context rather than a stock-level entry gate.
 
 ## What's included
 
@@ -68,7 +68,7 @@ The repository and market data are public. Your watchlist and notes are saved on
 
 The registry is a curated subset of NSE securities, not a maintained full-exchange listing. Update symbols and theme memberships deliberately, preserve ISIN identity, and record the effective date. Market-cap values inherited in the CSV are not used for historical filtering or theme weights.
 
-Any rule change must increment `config/model.json`'s version and be documented. Do not retune a rule because a few recent charts look attractive. Keep old detection records and report results by model version. Nifty 500 (`^CRSLDX`) is the explicit comparison benchmark; this does not establish sector-adjusted alpha.
+Any rule change must increment `config/model.json`'s version and be documented. Do not retune a rule because a few recent charts look attractive. Keep old detection records and report results by model version. Nifty 500 (`^CRSLDX`) is the broad comparison benchmark; individual stocks are not admitted merely for beating it, and candidate ordering uses the stock's 20-session return minus its eligible industry median. This does not establish sector-adjusted alpha.
 
 Source assets: [jalanaditya30/Sector-data](https://github.com/jalanaditya30/Sector-data), copied with the owner's authorization. Existing historical strategy results have not been transferred as validation of this new app.
 

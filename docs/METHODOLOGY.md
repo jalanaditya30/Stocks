@@ -1,4 +1,4 @@
-# Confirmed-move research specification — confirmed-v2-nifty500
+# Confirmed-move research specification — confirmed-v3-industry-rank
 
 ## Objective
 
@@ -20,7 +20,7 @@ Zero candidates is valid. Missing benchmarks, stale bars, and data outages never
 - At least two consecutive closes, beginning with the crossing, are above the same fixed prior-high level; every subsequent close holds it.
 - Latest close > 20-session average > 50-session average.
 - The 20-session average has risen versus five sessions earlier.
-- Positive five-session return and positive 20-session stock return minus Nifty 500 return.
+- Positive five-session and 20-session absolute stock returns. Nifty 500 relative return is displayed as context, not used as a stock-level pass/fail rule.
 - Median cash turnover over the latest five sessions ≥1.2× the median of the preceding twenty.
 - The mean closing location within the last three daily ranges is ≥0.55. A zero-range bar has location 0.5.
 
@@ -30,7 +30,7 @@ The breakout day's high is excluded from the reference. No future prices appear 
 
 **Confirmed moves:** crossing and holding the maximum adjusted high of the sixty sessions before the breakout.
 
-**Leaders resuming:** at least a 10% advance over forty sessions ending before the consolidation, followed by ten consolidation sessions with total high/low range ≤12% and at least three down closes. Price then crosses and holds the prior twenty-session high. Positive 60-session relative performance versus Nifty is also required. If this pattern qualifies it receives its own label before the generic sixty-session breakout is considered.
+**Leaders resuming:** at least a 10% advance over forty sessions ending before the consolidation, followed by ten consolidation sessions with total high/low range ≤12% and at least three down closes. Price then crosses and holds the prior twenty-session high. A positive absolute 60-session return is also required. If this pattern qualifies it receives its own label before the generic sixty-session breakout is considered.
 
 ## Extension and event review
 
@@ -52,7 +52,7 @@ Every eligible stock receives four visible, past-only context checks:
 - ADX(14) is at least 20 and +DI is above −DI.
 - The 20-session Kaufman Efficiency Ratio is at least 0.25.
 
-The default order is newest first detection, with 20-session relative performance and turnover participation as tie-breakers. The checks describe an observed move but are not a combined quality score: the retrospective audit did not show 4/4 checks outperforming 3/4. They do not qualify a stock that failed the confirmed-move rules, and the thresholds have not been validated as a probability of further upside. The first 15 names are a review budget, not a tested top-15 strategy. The UI also supports Nifty 500-relative performance, check count, stock-versus-group strength, ADX, efficiency and liquidity sorting.
+The default order is newest first detection, with stock-versus-industry 20-session return and turnover participation as tie-breakers. The peer measure is the stock's absolute 20-session return minus the median among currently eligible members of its exchange industry. It ranks simultaneous candidates but is not a hard entry gate. The checks describe an observed move but are not a combined quality score: the retrospective audit did not show 4/4 checks outperforming 3/4. They do not qualify a stock that failed the confirmed-move rules, and the thresholds have not been validated as a probability of further upside. The first 15 names are a review budget, not a tested top-15 strategy. The stock UI supports absolute return, check count, stock-versus-industry strength, ADX, efficiency and liquidity sorting; Nifty 500 comparisons are confined to market, sector/theme and portfolio evidence.
 
 Momentum stages are descriptive: Confirmed move, Trend continuation, Extended/event, Trend intact, Pullback/trend intact, Momentum weakening or Mixed. `Sector-supported setup`, `Hold / monitor`, `Review / rotate` and `Watch` are research-posture labels, not broker instructions or executable exits. VStop is a review reference; gaps, slippage and intraday paths can make an actual exit materially different.
 
@@ -71,7 +71,7 @@ A group needs at least 30% of registered members, capped at eight and floored at
 - Avoid: 20- and 60-session relative strength are both negative and breadth is below 40%.
 - Mixed otherwise; insufficient-coverage groups are explicitly labelled.
 
-Themes are ranked separately from industries in that state order, then by relative performance and breadth. Rank movement compares the previous successful scan. A stock's displayed context is its strongest current curated membership; if none is mapped, its industry is used. All overlapping curated memberships are retained for disclosure. Memberships come from the current registry or mapped curated Sector-data themes; they are not point-in-time historical memberships. A stock appearing in several themes does not gain additional support. Theme states are descriptive and do not change stock-selection rules.
+Themes are ranked separately from industries in that state order, then by relative performance and breadth. Rank movement compares the previous successful scan. A stock's displayed rotation context is its strongest current curated membership; if none is mapped, its industry is used. Its peer-ranking denominator is always its own exchange industry, never an overlapping curated theme. All overlapping curated memberships are retained for disclosure. Memberships come from the current registry or mapped curated Sector-data themes; they are not point-in-time historical memberships. A stock appearing in several themes does not gain additional support. Theme states are descriptive and do not change stock-selection rules.
 
 ## First-detection journal and prospective outcomes
 

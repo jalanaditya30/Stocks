@@ -77,15 +77,17 @@ class RotationTests(unittest.TestCase):
              'vstop_bullish':True,'obv_bullish':True}
         themes=[
             {'taxonomy':'Curated theme','name':'Theme A','members':['1'],'status':'Emerging','rank':2,
-             'coverage':80,'coverage_quality':'Broad','breadth_change':5,'rs20':4},
+             'coverage':80,'coverage_quality':'Broad','breadth_change':5,'r20':5,'r60':7,'rs20':4},
             {'taxonomy':'Curated theme','name':'Theme B','members':['1'],'status':'Leading','rank':1,
-             'coverage':60,'coverage_quality':'Partial','breadth_change':8,'rs20':5},
-            {'taxonomy':'Industry','name':'Test industry','members':['1'],'status':'Mixed','rank':1,
-             'coverage':100,'coverage_quality':'Broad','breadth_change':0,'rs20':2}]
+             'coverage':60,'coverage_quality':'Partial','breadth_change':8,'r20':6,'r60':9,'rs20':5},
+            {'taxonomy':'Industry','name':'Test industry','members':['1','2','3'],'resolved':3,'status':'Mixed','rank':1,
+             'coverage':100,'coverage_quality':'Broad','breadth_change':0,'r20':3,'r60':6,'rs20':2}]
         attach_rotation_context([row],themes)
         self.assertEqual(row['theme_name'],'Theme B')
         self.assertEqual(len(row['theme_memberships']),2)
-        self.assertEqual(row['stock_vs_theme_rs20'],2)
+        self.assertEqual(row['stock_vs_industry_r20'],1)
+        self.assertEqual(row['stock_vs_industry_r60'],2)
+        self.assertEqual(row['industry_name'],'Test industry')
         self.assertEqual(row['rotation_posture'],'Hold / monitor')
         other={**row,'isin':'2','theme_memberships':[]}
         attach_rotation_context([other],themes)
