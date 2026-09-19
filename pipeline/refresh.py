@@ -15,7 +15,7 @@ import pandas as pd
 import pandas_market_calendars as mcal
 import yfinance as yf
 
-from pipeline.engine import normalized, analyze, theme_summary
+from pipeline.engine import normalized, analyze, theme_summary, vstop_series, pct
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT/'data'
@@ -121,7 +121,12 @@ def track(ledger, rows, frames, benchmark, asof, cfg, record=True):
                                 continue
                 ledger.append({'id':key,'isin':r['isin'],'symbol':r['symbol'],'yahoo':r['yahoo'],
                     'setup':r['setup'],'first_seen':asof,'breakout_date':r['breakout_date'],
-                    'window':20 if r['setup']=='Leaders resuming' else 60,'model':cfg['version']})
+                    'window':20 if r['setup']=='Leaders resuming' else 60,'model':cfg['version'],
+                    'momentum_confirmations':r.get('momentum_confirmations'),
+                    'momentum_checks':r.get('momentum_checks',[]),'vstop_bullish':r.get('vstop_bullish'),
+                    'obv_bullish':r.get('obv_bullish'),'adx':r.get('adx'),
+                    'efficiency_20':r.get('efficiency_20'),'theme_name':r.get('theme_name'),
+                    'theme_state':r.get('theme_state'),'rotation_posture':r.get('rotation_posture')})
                 known.add(key)
     result=[]
     calendar=benchmark.index
@@ -181,6 +186,14 @@ def track(ledger, rows, frames, benchmark, asof, cfg, record=True):
                 **upside_summary(outcomes),
                 'median_net':round(float(np.median([o['net'] for o in outcomes])),2) if outcomes else None,
                 'median_excess':round(float(np.median([o['excess_net'] for o in outcomes])),2) if outcomes else None})
+    for h in cfg['forward_horizons']:
+        aligned=[r['outcomes'][str(h)] for r in result if (r.get('momentum_confirmations') or 0)>=3
+                 and str(h) in r['outcomes'] and r['model']==cfg['version']]
+        summary.append({'setup':'3–4 technical checks','horizon':h,'n':len(aligned),
+            'total':sum((r.get('momentum_confirmations') or 0)>=3 and r['model']==cfg['version'] for r in result),
+            **upside_summary(aligned),
+            'median_net':round(float(np.median([o['net'] for o in aligned])),2) if aligned else None,
+            'median_excess':round(float(np.median([o['excess_net'] for o in aligned])),2) if aligned else None})
     return ledger,result,summary
 
 
@@ -211,7 +224,45 @@ def upside_summary(outcomes):
     return out
 
 
-def build(universe,frames,asof,cfg,themes,ledger,record=True):
+def rank_themes(themes, previous=None):
+    priority={'Leading':0,'Emerging':1,'Mature':2,'Mixed':3,'Weakening':4,'Avoid':5,'Insufficient coverage':6}
+    score=lambda value,missing: missing if value is None else value
+    old={(x.get('taxonomy'),x.get('name')):x for x in (previous or [])}
+    for taxonomy in ['Curated theme','Industry']:
+        group=[x for x in themes if x['taxonomy']==taxonomy]
+        group.sort(key=lambda x:(priority.get(x['status'],9),-score(x.get('rs20'),-999),
+                                 -score(x.get('rs60'),-999),-score(x.get('breadth'),-1),x['name']))
+        for rank,item in enumerate(group,1):
+            prior=old.get((taxonomy,item['name']),{})
+            item['rank']=rank;item['previous_rank']=prior.get('rank')
+            item['rank_change']=prior.get('rank')-rank if prior.get('rank') else None
+            item['previous_status']=prior.get('status')
+    return sorted(themes,key=lambda x:(0 if x['taxonomy']=='Curated theme' else 1,x['rank']))
+
+
+def attach_rotation_context(rows, themes):
+    priority={'Leading':0,'Emerging':1,'Mature':2,'Mixed':3,'Weakening':4,'Avoid':5,'Insufficient coverage':6}
+    curated=[t for t in themes if t['taxonomy']=='Curated theme']
+    for row in rows:
+        memberships=[t for t in curated if row['isin'] in t['members']]
+        best=min(memberships,key=lambda t:(priority.get(t['status'],9),t['rank']),default=None)
+        row['theme_name']=best['name'] if best else None
+        row['theme_state']=best['status'] if best else None
+        row['theme_rank']=best['rank'] if best else None
+        supportive=best and best['status'] in ['Leading','Emerging']
+        weak=best and best['status'] in ['Weakening','Avoid']
+        if row['candidate'] and row['momentum_confirmations']>=3 and supportive:
+            posture='Priority review'
+        elif row['vstop_bullish'] and row['obv_bullish'] and not weak:
+            posture='Hold / monitor'
+        elif not row['vstop_bullish'] or weak:
+            posture='Review / rotate'
+        else:
+            posture='Watch'
+        row['rotation_posture']=posture
+
+
+def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=None):
     benchmark=frames.get(cfg['benchmark'])
     if benchmark is None or len(benchmark)<cfg['min_history'] or str(benchmark.index[-1].date())!=asof:
         raise RuntimeError('The benchmark does not have the expected completed session')
@@ -225,13 +276,15 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True):
         else: excluded.append({'isin':meta['isin'],'symbol':meta['nse'],'reason':reason})
     leaders=sorted([r for r in rows if r['momentum_12_1'] is not None],key=lambda r:-r['momentum_12_1'])
     for r in leaders[:max(1,int(np.ceil(len(leaders)*.1)))]:r['leader']=True
-    rows.sort(key=lambda r:(not r['candidate'],-r['rs20'],-r['participation'],r['isin']))
     groups=defaultdict(set)
     for r in universe:groups[r['industry_group']].add(r['isin'])
     theme_rows=[theme_summary(rows,ids,name,'Industry') for name,ids in groups.items()]
     theme_rows += [theme_summary(rows,set(t['members']),t['name'],'Curated theme') for t in themes]
-    order={'Improving':0,'Leading':1,'Mixed':2,'Weakening':3,'Insufficient coverage':4}
-    theme_rows.sort(key=lambda t:(order[t['status']],-(t['breadth_change'] or 0),-(t['rs20'] or 0),t['name']))
+    theme_rows=rank_themes(theme_rows,previous_themes)
+    attach_rotation_context(rows,theme_rows)
+    posture={'Priority review':0,'Hold / monitor':1,'Watch':2,'Review / rotate':3}
+    rows.sort(key=lambda r:(not r['candidate'],posture[r['rotation_posture']],
+                            -r['momentum_confirmations'],-r['rs20'],-r['participation'],r['isin']))
     ledger,tracking,summary=track(ledger,rows,frames,benchmark,asof,cfg,record)
     for row in rows:
         signals=[s for s in tracking if s['isin']==row['isin'] and s['model']==cfg['version']]
@@ -240,17 +293,25 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True):
     charts={}
     for isin,ticker in chart_ids.items():
         d=frames[ticker].tail(100)
+        stop,_,_=vstop_series(d,cfg.get('vstop_length',10),cfg.get('vstop_factor',2))
         charts[isin]={'dates':[str(x.date()) for x in d.index],
-                      **{k[0].lower():[round(float(x),3) for x in d[k]] for k in ['Open','High','Low','Close','Volume']}}
+                      **{k[0].lower():[round(float(x),3) for x in d[k]] for k in ['Open','High','Low','Close','Volume']},
+                      'vstop':[round(float(x),3) if np.isfinite(x) else None for x in stop]}
     bc=benchmark.Close.to_numpy(float)
+    sma50=float(np.mean(bc[-50:]));sma200=float(np.mean(bc[-200:])) if len(bc)>=200 else None
+    regime=('Bull' if bc[-1]>sma50 and (sma200 is None or bc[-1]>sma200) and pct(bc,20)>0 else
+            'Defensive' if bc[-1]<sma50 and sma200 is not None and bc[-1]<sma200 else 'Mixed')
     market={'benchmark':'Nifty 50','r20':round(float((bc[-1]/bc[-21]-1)*100),2),
-            'breadth':round(float(np.mean([r['above50'] for r in rows]))*100,1) if rows else None}
+            'breadth':round(float(np.mean([r['above50'] for r in rows]))*100,1) if rows else None,
+            'regime':regime,'above50':bool(bc[-1]>sma50),'above200':bool(bc[-1]>sma200) if sma200 else None}
+    rotation={'leaders':[t['name'] for t in theme_rows if t['taxonomy']=='Curated theme' and t['status'] in ['Leading','Emerging']][:5],
+              'review':[t['name'] for t in theme_rows if t['taxonomy']=='Curated theme' and t['status'] in ['Weakening','Avoid']][:5]}
     payload={'schema':1,'model':cfg['version'],'asof':asof,
         'generated':datetime.now(timezone.utc).isoformat(),'status':'ready','source':'Yahoo Finance / yfinance; completed daily bars',
         'research_status':'New descriptive rules; prospective evidence accumulating. No claimed win probability.',
         'policy':cfg,'market':market,'coverage':{'universe':len(universe),'fresh':fresh,'eligible':len(rows),
              'excluded':len(excluded),'reasons':dict(Counter(x['reason'] for x in excluded))},
-        'rows':rows,'themes':theme_rows,'tracking':tracking,'summary':summary,'excluded':excluded,
+        'rows':rows,'themes':theme_rows,'rotation':rotation,'tracking':tracking,'summary':summary,'excluded':excluded,
         'surveillance':'Not automatically screened for ASM/GSM or price bands; verify on NSE before acting.'}
     return payload,{'asof':asof,'charts':charts},ledger
 
@@ -276,7 +337,8 @@ def main():
     previous=read(DATA/'latest.json',{})
     if previous.get('asof') and previous['asof']>asof:raise RuntimeError('Refusing to replace a newer snapshot')
     current=asof==expected
-    payload,charts,ledger=build(universe,frames,asof,cfg,read(ROOT/'config/themes.json',[]),ledger,current and not history.exists())
+    payload,charts,ledger=build(universe,frames,asof,cfg,read(ROOT/'config/themes.json',[]),ledger,
+                                current and not history.exists(),previous.get('themes',[]))
     payload['expected_session']=expected
     payload['freshness']='current' if current else 'delayed'
     if args.limit:

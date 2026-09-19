@@ -3,8 +3,8 @@ const {JSDOM}=require('jsdom');
 const fs=require('node:fs');
 const assert=require('node:assert/strict');
 const html=fs.readFileSync('index.html','utf8'),code=fs.readFileSync('app.js','utf8');
-const base={isin:'INE000000001',symbol:'TEST',name:'Synthetic Test Company',sector:'Test industry',asof:'2026-09-18',last:114,r5:4,r20:12,rs20:10,rs60:15,turnover_cr:12,participation:2,extension:3,candidate:true,setup:'Confirmed moves',anchor:110,anchor_adjusted:110,leader:true,reasons:['Held above reference'],risks:['Synthetic test'],tracking:null};
-const snapshot={schema:1,status:'ready',asof:'2026-09-18',rows:[base,{...base,isin:'INE000000002',symbol:'OTHER',name:'Other Test Company',candidate:false,setup:'Other',leader:false}],themes:[{name:'Test theme',taxonomy:'Curated theme',members:[base.isin],status:'Improving',r20:12,breadth:80,breadth_change:10,resolved:3,total:3,rs20:10}],summary:[],tracking:[],market:{r20:2,breadth:60},coverage:{fresh:2,universe:2,eligible:2,reasons:{}},excluded:[]};
+const base={isin:'INE000000001',symbol:'TEST',name:'Synthetic Test Company',sector:'Test industry',asof:'2026-09-18',last:114,r5:4,r20:12,rs20:10,rs60:15,turnover_cr:12,participation:2,extension:3,candidate:true,setup:'Confirmed moves',stage:'Confirmed move',rotation_posture:'Priority review',momentum_confirmations:4,momentum_checks:['VStop bullish','OBV MACD bullish','Directional trend','Efficient advance'],vstop:108,vstop_bullish:true,vstop_distance:5.5,obv_bullish:true,obv_flip:false,adx:31,plus_di:29,minus_di:12,efficiency_20:.55,atr_pct:2.1,theme_name:'Test theme',theme_state:'Leading',theme_rank:1,anchor:110,anchor_adjusted:110,leader:true,reasons:['Held above reference'],risks:['Synthetic test'],tracking:null};
+const snapshot={schema:1,status:'ready',asof:'2026-09-18',rows:[base,{...base,isin:'INE000000002',symbol:'OTHER',name:'Other Test Company',candidate:false,setup:'Other',stage:'Trend intact',leader:false}],themes:[{name:'Test theme',taxonomy:'Curated theme',members:[base.isin],status:'Leading',rank:1,rank_change:1,r20:12,r60:20,breadth:80,breadth_change:10,vstop_bullish:75,resolved:3,total:3,rs20:10,rs60:15}],rotation:{leaders:['Test theme'],review:[]},summary:[],tracking:[],market:{r20:2,breadth:60,regime:'Bull'},coverage:{fresh:2,universe:2,eligible:2,reasons:{}},excluded:[]};
 async function boot(data=snapshot,chartDate=data.asof,research=null){
  const dom=new JSDOM(html,{url:'https://example.test/Stocks/',runScripts:'outside-only'}),w=dom.window;
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true};
@@ -18,12 +18,15 @@ async function boot(data=snapshot,chartDate=data.asof,research=null){
  d.querySelector('[data-watch]').click();assert.equal(JSON.parse(w.localStorage.getItem('stocks-workspace-v1'))[base.isin].watch,true);
  d.querySelector('[data-stock]').click();await new Promise(r=>setImmediate(r));
  assert.equal(d.querySelector('#stock-dialog').open,true);assert.ok(d.querySelector('#detail-chart svg'));
+ assert.match(d.querySelector('#detail-content').textContent,/VStop 10×2/);
+ assert.match(d.querySelector('#detail-content').textContent,/OBV MACD/);
  let note=d.querySelector('#stock-note');note.value='Check earnings';note.dispatchEvent(new w.Event('input'));
  assert.equal(JSON.parse(w.localStorage.getItem('stocks-workspace-v1'))[base.isin].note,'Check earnings');
  d.querySelector('[data-review="dismissed"]').click();assert.equal(d.querySelectorAll('#stock-rows tr').length,0);
  d.querySelector('[data-review="unreviewed"]').click();d.querySelector('#stock-dialog').close();
  d.querySelector('[data-view="watchlist"]').click();assert.equal(d.querySelectorAll('#stock-rows tr').length,1);
  d.querySelector('[data-view="themes"]').click();d.querySelector('#theme-grid [data-theme]').click();assert.equal(d.querySelectorAll('#stock-rows tr').length,1);
+ assert.match(d.querySelector('#rotation-board').textContent,/Test theme/);
  d.querySelector('#clear-theme').click();assert.equal(d.querySelectorAll('#stock-rows tr').length,2);
  let search=d.querySelector('#search');search.value='OTHER';search.dispatchEvent(new w.Event('input'));assert.equal(d.querySelectorAll('#stock-rows tr').length,1);assert.match(d.querySelector('#stock-rows').textContent,/Other Test/);
  dom.window.close();

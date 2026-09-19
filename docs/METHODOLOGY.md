@@ -43,24 +43,35 @@ Remove from the two candidate lists when any of the following holds:
 
 Those with a held breakout remain inspectable under **Extended / event**. This is an investigation queue, not an assertion that a large event is bearish. The breakout reference is a structural observation, not an executable stop-loss guarantee.
 
-## Ordering and established leaders
+## Momentum context and ordering
 
-Default order: 20-session relative strength, then turnover participation, then identity for tie-breaking. The first 15 names are a review budget, not a tested top-15 strategy. The UI also supports liquidity and first-detection sorting.
+Every eligible stock receives four visible, past-only context checks:
+
+- VStop on daily close with ATR length 10 and factor 2 is bullish.
+- RafaelZioni's open-source OBV MACD is bullish, using the supplied chart defaults: OBV length 1, DEMA 9, slow EMA 26 and linear-regression slope length 2. Pivot period 50 is a display setting and does not alter the bullish/bearish line state.
+- ADX(14) is at least 20 and +DI is above −DI.
+- The 20-session Kaufman Efficiency Ratio is at least 0.25.
+
+The default order is confirmation count, then 20-session relative strength, turnover participation and identity. These checks describe and rank an observed move. They do not qualify a stock that failed the confirmed-move rules, and the thresholds have not been validated as a probability of further upside. The first 15 names are a review budget, not a tested top-15 strategy. The UI also supports 60-session relative strength, ADX, efficiency, liquidity and first-detection sorting.
+
+Momentum stages are descriptive: Confirmed move, Trend continuation, Extended/event, Trend intact, Pullback/trend intact, Momentum weakening or Mixed. `Priority review`, `Hold / monitor`, `Review / rotate` and `Watch` are research-posture labels, not broker instructions or executable exits. VStop is a review reference; gaps, slippage and intraday paths can make an actual exit materially different.
 
 The separate established-leaders view selects the top decile by `adjusted_close[t−21] / adjusted_close[t−252] − 1`, requiring sufficient history. It excludes the recent month from the 12-month lookback. This deliberately matches its displayed definition and does not borrow passing results from the differently indexed Sector-data implementation.
 
 ## Themes and industries
 
-Use the median return of current eligible members; do not include old fallback values or inherited snapshot weights. Breadth is the share of those members above their 50-session average. Breadth change compares the same cohort with its position five sessions earlier.
+Use the median return of current eligible members; do not include old fallback values or inherited snapshot weights. Measure median 20- and 60-session relative strength versus Nifty 50, breadth above 20-, 50- and 200-session averages, the share in bullish VStop and OBV states, new highs, median ADX/efficiency and five-session change in 50-session breadth.
 
 A group needs at least three eligible members and 70% eligibility coverage to receive a state:
 
-- Improving: breadth rose ≥5 percentage points and median 20-session relative return is positive.
-- Leading: breadth ≥60% and median relative return is positive.
-- Weakening: breadth fell ≥5 percentage points.
+- Leading: positive 20- and 60-session relative strength, at least 60% 50-session breadth and at least 55% bullish VStop.
+- Emerging: 50-session breadth rose at least 5 percentage points, 20-session relative strength is positive, and breadth is still below 60%.
+- Mature: positive 60-session relative strength and breadth at least 60%, but breadth is falling or 20-session relative strength has slowed materially versus 60-session strength.
+- Weakening: breadth fell at least 5 percentage points and either 20-session relative strength is negative or fewer than half the members have bullish VStop.
+- Avoid: 20- and 60-session relative strength are both negative and breadth is below 40%.
 - Mixed otherwise; insufficient-coverage groups are explicitly labelled.
 
-Memberships come from the current registry or mapped curated Sector-data themes. They are not point-in-time historical memberships. Groups can overlap. A stock appearing in several themes does not gain additional confirmations. Theme states are descriptive and do not change stock-selection rules.
+Themes are ranked separately from industries in that state order, then by relative strength and breadth. Rank movement compares the previous successful scan. A stock's displayed theme context is its strongest current curated membership. Memberships come from the current registry or mapped curated Sector-data themes; they are not point-in-time historical memberships. Groups can overlap. A stock appearing in several themes does not gain additional confirmations. Theme states are descriptive and do not change stock-selection rules.
 
 ## First-detection journal and prospective outcomes
 
@@ -89,8 +100,10 @@ For every complete forward horizon, the live tracker records best adjusted high 
 
 Completed metrics persist during outages. Old completed returns are retained when new opportunity fields are added. A missing original detection session cannot be silently replaced by the earliest remaining provider bar. Stale last prices cannot imply that a setup is holding today. No future bar is used past the requested evaluation date. Delayed downloads receive a retry while retaining the best fallback.
 
-### TradingView screenshots
+### TradingView screenshots and indicator parity
 
-Seven daily charts supplied on 19 September show VStop (10, close, 2), Parabolic SAR (0.02, 0.02, 0.2), RSI (14, close), and a custom OBV MACD labelled `1 DEMA 9 26 2 50`. These are manual review inputs, not the confirmed-v1 scanner formulas. Exact custom indicator parity requires its Pine source, including smoothing, initialization and signal-color logic; screenshots do not establish those formulas. No claim of parity is made.
+Seven daily charts supplied on 19 September show VStop (10, close, 2), Parabolic SAR (0.02, 0.02, 0.2), RSI (14, close), and RafaelZioni's open-source OBV MACD labelled `1 DEMA 9 26 2 50`. The scanner now calculates VStop and the OBV MACD state from daily adjusted OHLCV using those visible defaults. It also calculates ADX/DI and Efficiency Ratio. SAR and RSI remain manual chart context because they are not needed for the four-check model.
 
-Use the charts to distinguish an intact advance, a stretched move and lost trend support. A chart that rose strongly before the screenshot is not evidence that a later scanner suggestion has upside. Evaluation must begin after a recorded suggestion. Pre-breakout setups remain excluded.
+The scanner follows TradingView's published `ta.vStop` logic and the open-source OBV MACD formulas. Exact displayed values can still differ because the app uses Yahoo's completed daily adjusted history, while a TradingView screenshot may use a different feed, adjustment history or an unfinished intraday bar. Directional state is the intended comparison; numerical equality with a screenshot is not claimed.
+
+Use the charts to distinguish an intact advance, a stretched move and lost trend support. A chart that rose strongly before the screenshot is not evidence that a later scanner suggestion has upside. Evaluation must begin after a recorded suggestion. The journal freezes the four-check count and theme context at first detection, allowing the `3–4 technical checks` cohort to accumulate prospective evidence without hindsight. Pre-breakout setups remain excluded.

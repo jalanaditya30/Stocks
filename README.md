@@ -6,14 +6,15 @@ A daily Indian-equity research workspace for **confirmed moves** and **leaders r
 
 - One shared, completed-session dataset for all screens.
 - Confirmed stock moves and renewed advances after consolidation; no predicted win probabilities.
-- Curated themes and industry breadth, with eligibility coverage and five-session breadth changes.
+- Curated themes and industries ranked as Leading, Emerging, Mature, Mixed, Weakening or Avoid, with scan-to-scan rank movement.
+- Visible VStop, OBV MACD, ADX/DI and Efficiency Ratio checks that describe whether a confirmed move still has technical support.
 - Established long-term momentum leaders as a separate context view.
 - Candlestick/volume charts, first-detection markers, TradingView and Screener links.
 - Browser-local watchlist, review/dismiss decisions, notes, and export/import.
 - Immutable first daily snapshots, a detection ledger, and prospective 5/10/20/40-session outcomes.
 - A visible refresh-health state. Failed or incomplete refreshes preserve the last successful snapshot.
 
-The initial thresholds are **new research hypotheses**, not validated trading signals. They do not revive the retired R2/R5 strategies. A confirmed price move can fail. See [the full specification](docs/METHODOLOGY.md).
+The initial thresholds are **new research hypotheses**, not validated trading signals. They do not revive the retired R2/R5 strategies. The four momentum checks rank confirmed moves but do not admit pre-breakout stocks or claim remaining upside. A confirmed price move can fail. See [the full specification](docs/METHODOLOGY.md).
 
 ## Publish on GitHub Pages
 

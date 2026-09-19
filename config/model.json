@@ -9,6 +9,17 @@
   "max_sma_extension_pct": 12.0,
   "max_return_5d_pct": 15.0,
   "event_day_pct": 15.0,
+  "vstop_length": 10,
+  "vstop_factor": 2.0,
+  "adx_length": 14,
+  "obv_macd": {
+    "obv_length": 1,
+    "ma_type": "DEMA",
+    "ma_length": 9,
+    "slow_length": 26,
+    "slope_length": 2,
+    "pivot_period": 50
+  },
   "confirmation_closes": 2,
   "lookback_breakout_sessions": 5,
   "forward_horizons": [
