@@ -26,6 +26,15 @@ Zero candidates is valid. Missing benchmarks, stale bars, and data outages never
 
 The breakout day's high is excluded from the reference. No future prices appear in signal construction. The rules describe observed confirmation; they are not calibrated probabilities.
 
+## Participation diagnostics
+
+The candidate rule continues to use a robust cash-turnover comparison: median raw close × volume over the latest five sessions divided by the median over the preceding twenty sessions. The recent five sessions are excluded from that baseline. Two additional Quiet Climber-style measurements are published for inspection and sorting:
+
+- `Volume 5D/30D` = mean traded volume over the latest five completed sessions divided by mean traded volume over the latest thirty.
+- `20D turnover/market cap` = mean daily raw close × volume over the latest twenty sessions, in crore rupees, divided by estimated live market capitalisation, expressed as a percentage.
+
+Estimated live market capitalisation carries the registry value forward by `latest raw close / registry reference price`. If that ratio lies outside 0.2–5.0, the registry value is retained to avoid obvious split/bonus distortions. Registry price and market-cap fields can still be stale, so turnover/market cap is a liquidity-context estimate rather than an exchange-verified free-float measure. Volume means traded volume, not delivery volume. These two readings and 20-session up-volume share are descriptive; no threshold from them changes candidate qualification in this model version.
+
 ## Two distinct setups
 
 **Confirmed moves:** crossing and holding the maximum adjusted high of the sixty sessions before the breakout.
@@ -52,9 +61,11 @@ Every eligible stock receives four visible, past-only context checks:
 - ADX(14) is at least 20 and +DI is above −DI.
 - The 20-session Kaufman Efficiency Ratio is at least 0.25.
 
-The default order is newest first detection, with stock-versus-industry 20-session return and turnover participation as tie-breakers. The peer measure is the stock's absolute 20-session return minus the median among currently eligible members of its exchange industry. It ranks simultaneous candidates but is not a hard entry gate. The checks describe an observed move but are not a combined quality score: the retrospective audit did not show 4/4 checks outperforming 3/4. They do not qualify a stock that failed the confirmed-move rules, and the thresholds have not been validated as a probability of further upside. The first 15 names are a review budget, not a tested top-15 strategy. The stock UI supports absolute return, check count, stock-versus-industry strength, ADX, efficiency and liquidity sorting; Nifty 500 comparisons are confined to market, sector/theme and portfolio evidence.
+The default order is newest first detection, with stock-versus-industry 20-session return and turnover participation as tie-breakers. The peer measure is the stock's absolute 20-session return minus the median among currently eligible members of its exchange industry. It ranks simultaneous candidates but is not a hard entry gate. The checks describe an observed move but are not a combined quality score: the retrospective audit did not show 4/4 checks outperforming 3/4. They do not qualify a stock that failed the confirmed-move rules, and the thresholds have not been validated as a probability of further upside. The first 15 names are a review budget, not a tested top-15 strategy. The stock UI supports absolute return, check count, stock-versus-industry strength, ADX, efficiency, liquidity and the descriptive participation diagnostics above; Nifty 500 comparisons are confined to market, sector/theme and portfolio evidence.
 
 Momentum stages are descriptive: Confirmed move, Trend continuation, Extended/event, Trend intact, Pullback/trend intact, Momentum weakening or Mixed. `Sector-supported setup`, `Hold / monitor`, `Review / rotate` and `Watch` are research-posture labels, not broker instructions or executable exits. VStop is a review reference; gaps, slippage and intraday paths can make an actual exit materially different.
+
+The detail chart uses the same completed-session adjusted OHLC series as the scanner, with traded volume below it on the same x-axis. It overlays VStop, the adjusted breakout reference and a first-detection marker when that date is in the displayed 100 sessions. Pointer or touch movement reveals the selected session's OHLC, close-to-close move and volume; this interaction is presentation only.
 
 The separate established-leaders view selects the top decile by `adjusted_close[t−21] / adjusted_close[t−252] − 1`, requiring sufficient history. It excludes the recent month from the 12-month lookback. This deliberately matches its displayed definition and does not borrow passing results from the differently indexed Sector-data implementation.
 

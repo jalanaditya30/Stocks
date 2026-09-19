@@ -5,11 +5,12 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from pipeline.engine import normalized, analyze, crossed_and_held, theme_summary
+from pipeline.engine import normalized, analyze, crossed_and_held, live_market_cap, theme_summary
 from pipeline.refresh import build, track, expected_session, replacing_newer_same_model, select_session
 
 CFG=json.loads((Path(__file__).resolve().parents[1]/'config/model.json').read_text())
-META={'isin':'INE000000001','nse':'TEST','yahoo':'TEST.NS','name':'Test company','industry_group':'Test industry'}
+META={'isin':'INE000000001','nse':'TEST','yahoo':'TEST.NS','name':'Test company','industry_group':'Test industry',
+      'price':'100','mcap_cr':'1000'}
 
 
 def fixture(n=300):
@@ -73,6 +74,22 @@ class ConfirmationTests(unittest.TestCase):
         self.assertAlmostEqual(d.CashTurnover.iloc[-1],self.raw.Close.iloc[-1]*self.raw.Volume.iloc[-1]/1e7)
         row,_=analyze(META,d,self.b,self.asof,CFG)
         self.assertAlmostEqual(row['last'],self.raw.Close.iloc[-1],places=2)
+
+    def test_quiet_climber_participation_context_uses_documented_windows(self):
+        row,error=analyze(META,self.d,self.b,self.asof,CFG)
+        self.assertIsNone(error)
+        expected_volume=self.d.Volume.iloc[-5:].mean()/self.d.Volume.iloc[-30:].mean()
+        expected_turnover=self.d.CashTurnover.iloc[-20:].mean()
+        expected_mcap=1000*self.d.RawClose.iloc[-1]/100
+        self.assertAlmostEqual(row['volume_ratio_5d_30d'],expected_volume,places=2)
+        self.assertAlmostEqual(row['turnover_20d_cr'],expected_turnover,places=2)
+        self.assertAlmostEqual(row['mcap_cr'],expected_mcap,places=1)
+        self.assertAlmostEqual(row['turnover_mcap_20d_pct'],expected_turnover/expected_mcap*100,places=3)
+
+    def test_live_market_cap_guards_obvious_corporate_action_ratio(self):
+        self.assertEqual(live_market_cap(META,114),1140)
+        self.assertEqual(live_market_cap(META,10),1000)
+        self.assertIsNone(live_market_cap({'price':'100','mcap_cr':''},114))
 
     def test_current_bar_and_future_prices_are_removed(self):
         old_date=str(self.raw.index[-2].date())

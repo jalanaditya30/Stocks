@@ -111,3 +111,10 @@ li,.detail-links{font-size:14px}
  .posture{align-items:flex-start;flex-direction:column;gap:4px}
  .posture>span:last-child{margin-left:0}
 }
+
+/* Interactive stock chart: one shared x-axis keeps candles and volume aligned. */
+#detail-chart{background:#111822;border-color:#263343;padding:10px;color:#aeb9c6;touch-action:none}
+.chart-legend{min-height:27px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:2px 5px 8px;font-size:11px;font-variant-numeric:tabular-nums;color:#8f9baa}
+.chart-legend span:first-child{color:#bec8d2}.chart-legend b{font-weight:600;color:#cbd5df}.chart-legend .up{color:#37b9a0}.chart-legend .down{color:#e36d70}
+.interactive-chart{cursor:crosshair;user-select:none}.interactive-chart .chart-bg{fill:#111822}.interactive-chart .chart-grid line{stroke:#25303d;stroke-width:1}.interactive-chart .chart-axis text{fill:#8592a0;font-size:10px}.interactive-chart .wick.up{stroke:#37b9a0}.interactive-chart .wick.down{stroke:#e36d70}.interactive-chart .body.up,.interactive-chart .volume.up{fill:#2ea991}.interactive-chart .body.down,.interactive-chart .volume.down{fill:#d75c61}.interactive-chart .volume{opacity:.62}.interactive-chart .vstop{stroke-width:2.2}.interactive-chart .vstop.up{stroke:#42c7a6}.interactive-chart .vstop.down{stroke:#ee7477}.interactive-chart .anchor{stroke:#d6a94c;stroke-dasharray:6 4}.interactive-chart .anchor-label{fill:#d6a94c;font-size:10px}.interactive-chart .seen{stroke:#72a4db;stroke-dasharray:3 3}.interactive-chart .seen-label{fill:#8cb5e2;font-size:10px}.interactive-chart .volume-average{stroke:#d6a94c;stroke-dasharray:5 4}.interactive-chart .volume-average-label{fill:#d6a94c;font-size:10px}.interactive-chart .chart-cross line{stroke:#738293;stroke-dasharray:3 3;pointer-events:none}.interactive-chart .chart-cross rect{fill:#405064}.interactive-chart .chart-cross text{fill:#fff;font-size:10px;pointer-events:none}.chart-caption{color:#8e9aa8}
+@media(max-width:800px){.chart-legend{gap:7px;font-size:10px}#detail-chart{margin-left:-10px;margin-right:-10px;padding:7px}}

@@ -33,6 +33,22 @@ def pct(c, n):
     return float((c[-1] / c[-n-1] - 1) * 100)
 
 
+def live_market_cap(meta, last_raw_close):
+    """Carry registry market cap forward by price while guarding split errors."""
+    try:
+        market_cap=float(meta.get('mcap_cr') or 0)
+        reference_price=float(meta.get('price') or 0)
+    except (TypeError,ValueError):
+        return None
+    if market_cap<=0:
+        return None
+    if reference_price>0 and last_raw_close>0:
+        ratio=last_raw_close/reference_price
+        if .2<=ratio<=5:
+            return market_cap*ratio
+    return market_cap
+
+
 def _ema(values, length):
     return pd.Series(values, dtype=float).ewm(span=length, adjust=False, min_periods=1).mean().to_numpy()
 
@@ -187,6 +203,12 @@ def analyze(meta, d, benchmark, asof, cfg):
     slope = sma20 / float(np.mean(c[-25:-5])) - 1
     baseline = float(np.median(cash[-25:-5]))
     participation = float(np.median(cash[-5:]) / baseline) if baseline > 0 else 0
+    volume=d.Volume.to_numpy(float)
+    volume_base=float(np.mean(volume[-30:]))
+    volume_ratio=float(np.mean(volume[-5:])/volume_base) if volume_base>0 else None
+    turnover_20d=float(np.mean(cash[-20:]))
+    mcap=live_market_cap(meta,float(d.RawClose.iloc[-1]))
+    turnover_mcap=turnover_20d/mcap*100 if mcap else None
     location = float(np.mean(np.divide(c[-3:]-l[-3:], h[-3:]-l[-3:],
                                       out=np.full(3,.5), where=(h[-3:]-l[-3:])>0)))
     largest = float(np.max(np.abs(np.diff(c[-6:])/c[-6:-1]))*100)
@@ -230,7 +252,6 @@ def analyze(meta, d, benchmark, asof, cfg):
     # Quotes and levels use the latest raw-price scale, charts use adjusted prices.
     raw_factor = float(d['Adj Close'].iloc[-1] / d.RawClose.iloc[-1])
     raw_factor = raw_factor if np.isfinite(raw_factor) and raw_factor>0 else 1
-    volume=d.Volume.to_numpy(float)
     direction=np.diff(c[-21:])
     directional_volume=volume[-20:]
     up_volume=float(directional_volume[direction>0].sum())
@@ -242,6 +263,9 @@ def analyze(meta, d, benchmark, asof, cfg):
            'last':round(float(c[-1]/raw_factor),2),'r5':round(r5,2),'r20':round(r20,2),
            'r60':round(r60,2),'rs20':round(rs20,2),'rs60':round(rs60,2),
            'turnover_cr':round(turn,2),'participation':round(participation,2),
+           'volume_ratio_5d_30d':round(volume_ratio,2) if volume_ratio is not None else None,
+           'turnover_20d_cr':round(turnover_20d,2),'mcap_cr':round(mcap,1) if mcap else None,
+           'turnover_mcap_20d_pct':round(turnover_mcap,3) if turnover_mcap is not None else None,
            'up_volume_share_20':round(up_volume_share,1) if up_volume_share is not None else None,
            'momentum_12_1':round(long_momentum,2) if long_momentum is not None else None,
            'above20':bool(c[-1]>sma20),'above20_week_ago':bool(c[-6]>np.mean(c[-25:-5])),
