@@ -6,3 +6,87 @@
 @media(max-width:440px){.theme-cards,.theme-grid{grid-template-columns:1fr}.theme-cards .theme-card:nth-child(2){display:none}.topbar>.eyebrow{max-width:95px}.nav{font-size:11px;padding:10px 8px}.nav span{display:none}.section-heading .text-button{font-size:10px}.stat-value{font-size:25px}.list-footer{align-items:flex-start}.list-footer span{max-width:190px}}
 
 #workspace-tools{margin:-6px 0 10px;gap:20px}.research-divider{border:0;border-top:1px solid var(--line);margin:35px 0}.research-limitations{margin:18px 0;color:var(--muted);font-size:12px}.research-limitations summary{cursor:pointer;color:var(--green)}#historical-research>.notice{margin:18px 0}
+
+/* Readability pass — keep the research desk legible at normal browser zoom. */
+:root{
+  --bg:#f4f6f8;
+  --ink:#102b38;
+  --muted:#536873;
+  --line:#d7e0e5;
+  --green:#067761;
+  --green-bg:#e7f4ef;
+  --red:#b2403d;
+  --nav:#142f34;
+}
+body{font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+h1{font-size:40px;line-height:1.15}
+h2{font-size:25px}
+h3{font-size:18px;margin:24px 0 10px}
+.eyebrow,.small-label,.nav-label{font-size:11px;letter-spacing:1.4px}
+.sidebar{width:240px}
+.nav-label{font-size:10px}
+.nav{color:#bed0d2;padding:14px;font-size:14px;font-weight:600}
+.small-label{color:#98b0b2;font-size:10px}
+.sidebar-bottom p{font-size:14px}
+.sidebar-bottom .text-button{color:#b7e1d5;font-size:12px}
+.local-note{color:#a1b5b7;font-size:11px}
+main{margin-left:240px;padding:0 48px;max-width:1800px}
+.topbar{font-size:13px}
+.page-heading{padding:40px 0 32px}
+.page-heading p{font-size:15px}
+.version{font-size:12px}
+.stat{padding:25px 26px}
+.stat-label{font-size:13px}
+.stat-value{font-size:32px}
+.stat-foot{font-size:12px}
+.section{margin-top:38px}
+.section-heading .eyebrow{font-size:10px}
+.text-button{font-size:13px}
+.theme-card{padding:21px}
+.theme-card h3{font-size:16px}
+.badge{font-size:11px}
+.theme-metrics b{font-size:19px}
+.theme-metrics small,.theme-foot{font-size:12px}
+input[type=search]{padding:12px 0;font-size:14px}
+select{padding:11px 30px 11px 12px;font-size:13px}
+th{background:#f7f9fa;font-size:12px;font-weight:600;padding:13px 18px}
+td{padding:19px 18px;font-size:14px}
+.company-button{font-size:15px}
+.company-sub{margin-top:6px;font-size:11px}
+.company-sub .badge{font-size:10px}
+.metric-sub{font-size:11px}
+.list-footer,footer,footer .text-button{font-size:12px}
+.notice{color:#6f4d17;padding:13px 17px;font-size:14px}
+.empty p,.section-note{font-size:14px}
+.filter-chip{font-size:13px}
+.dialog-top .muted{font-size:13px}
+.detail-metric small,.chart-caption{font-size:12px}
+li,.detail-links{font-size:14px}
+.note-area{font-size:14px}
+.action{font-size:13px}
+.method-body p{font-size:15px}
+.journal-item{padding:17px;font-size:14px;align-items:flex-start}
+.journal-item small{font-size:12px;line-height:1.55}
+.research-limitations{font-size:14px}
+
+@media(max-width:1150px){
+  .sidebar{width:205px}
+  main{margin-left:205px;padding:0 28px}
+  h1{font-size:34px}
+  .stat{padding:19px}
+  .theme-card{padding:17px}
+}
+@media(max-width:800px){
+  body{font-size:15px}
+  .sidebar{width:100%}
+  main{margin-left:0;padding:0 18px}
+  h1{font-size:31px}
+  h2{font-size:22px}
+  .page-heading p{font-size:14px}
+  .topbar{font-size:11px}
+  .stat-label{font-size:12px}
+  .stat-foot{font-size:11px}
+  .theme-card h3{font-size:15px}
+  th{font-size:11px}
+  td{font-size:13px}
+}
