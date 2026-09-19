@@ -4,7 +4,7 @@ import pandas as pd
 
 from test_pipeline import CFG, META, fixture
 from pipeline.engine import normalized, momentum_indicators, vstop_series, theme_summary
-from pipeline.refresh import build, rank_themes
+from pipeline.refresh import attach_rotation_context, build, rank_themes
 
 
 def trending_frame(n=300):
@@ -66,11 +66,31 @@ class RotationTests(unittest.TestCase):
         self.assertEqual(a['rank'],1);self.assertEqual(a['rank_change'],1)
 
     def test_detection_stores_indicator_state_for_future_evidence(self):
-        raw,bench,asof=fixture();frames={'TEST.NS':normalized(raw,asof),'^NSEI':normalized(bench,asof)}
+        raw,bench,asof=fixture();frames={'TEST.NS':normalized(raw,asof),CFG['benchmark']:normalized(bench,asof)}
         payload,_,ledger=build([META],frames,asof,CFG,[],[])
         self.assertTrue(payload['rows'][0]['candidate'])
         self.assertIn('momentum_confirmations',ledger[0])
         self.assertIn('vstop_bullish',ledger[0])
+
+    def test_industry_fallback_and_overlapping_memberships_are_visible(self):
+        row={**self.row('1',7,8),'sector':'Test industry','momentum_confirmations':4,
+             'vstop_bullish':True,'obv_bullish':True}
+        themes=[
+            {'taxonomy':'Curated theme','name':'Theme A','members':['1'],'status':'Emerging','rank':2,
+             'coverage':80,'coverage_quality':'Broad','breadth_change':5,'rs20':4},
+            {'taxonomy':'Curated theme','name':'Theme B','members':['1'],'status':'Leading','rank':1,
+             'coverage':60,'coverage_quality':'Partial','breadth_change':8,'rs20':5},
+            {'taxonomy':'Industry','name':'Test industry','members':['1'],'status':'Mixed','rank':1,
+             'coverage':100,'coverage_quality':'Broad','breadth_change':0,'rs20':2}]
+        attach_rotation_context([row],themes)
+        self.assertEqual(row['theme_name'],'Theme B')
+        self.assertEqual(len(row['theme_memberships']),2)
+        self.assertEqual(row['stock_vs_theme_rs20'],2)
+        self.assertEqual(row['rotation_posture'],'Hold / monitor')
+        other={**row,'isin':'2','theme_memberships':[]}
+        attach_rotation_context([other],themes)
+        self.assertEqual(other['theme_name'],'Test industry')
+        self.assertEqual(other['theme_taxonomy'],'Industry')
 
 
 if __name__=='__main__':unittest.main()

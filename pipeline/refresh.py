@@ -67,7 +67,7 @@ def fetch(tickers, asof, require_current=True, period='2y'):
                             raw_latest=str(frame.index[-1]) if not frame.empty else 'empty'
                             valid_latest=str(d.index[-1].date()) if d is not None else 'none'
                             print(f'{t}: expected {asof}, provider latest {raw_latest}, valid latest {valid_latest}',flush=True)
-                            if t=='^NSEI' and not frame.empty:
+                            if t=='^CRSLDX' and not frame.empty:
                                 print('Benchmark provider bar:',frame.tail(1).to_json(orient='records'),flush=True)
                     except (KeyError,ValueError,TypeError) as exc:
                         print(f'{t}: unusable response ({type(exc).__name__}: {exc})',flush=True)
@@ -147,32 +147,33 @@ def track(ledger, rows, frames, benchmark, asof, cfg, record=True):
                     level=float(d.High.iloc[p-signal['window']:p].max())
                     item['state']='Below breakout level' if d.Close.iloc[-1]<level else 'Holding breakout level'
             # Never award returns at the same close that generated the signal.
-            # If the detection has rolled out of history, the next available bar
-            # must not be mistaken for its next-session entry.
-            entry=int(calendar.searchsorted(day,side='right')) if day in calendar else len(calendar)
-            if entry<len(calendar) and calendar[entry] in d.index:
-                ed=calendar[entry]
-                stock_open=float(d.loc[ed,'Open']); bench_open=float(benchmark.loc[ed,'Open'])
-                item['entry_date']=str(ed.date())
-                for horizon in cfg['forward_horizons']:
-                    if item['outcomes'].get(str(horizon),{}).get('upside_version')==1:
-                        continue
-                    end=entry+horizon-1
-                    if end<len(calendar):
-                        sessions=calendar[entry:end+1]
-                        if not sessions.isin(d.index).all():
+            # An older model's unfinished outcomes are frozen: recalculating them
+            # with this model's benchmark would mix two definitions in one record.
+            if signal.get('model')==cfg['version']:
+                entry=int(calendar.searchsorted(day,side='right')) if day in calendar else len(calendar)
+                if entry<len(calendar) and calendar[entry] in d.index:
+                    ed=calendar[entry]
+                    stock_open=float(d.loc[ed,'Open']); bench_open=float(benchmark.loc[ed,'Open'])
+                    item['entry_date']=str(ed.date())
+                    for horizon in cfg['forward_horizons']:
+                        if item['outcomes'].get(str(horizon),{}).get('upside_version')==1:
                             continue
-                        segment=d.loc[sessions]
-                        gross=float((segment.Close.iloc[-1]/stock_open-1)*100)
-                        br=float((benchmark.Close.iloc[end]/bench_open-1)*100)
-                        # Assumed 0.5% total dealing cost, not measured execution.
-                        net=float(((segment.Close.iloc[-1]/stock_open)*(1-.0025)/(1+.0025)-1)*100)
-                        outcome={'gross':round(gross,2),'net':round(net,2),
-                            'benchmark':round(br,2),'excess_net':round(net-br,2),
-                            'worst_excursion':round(float((segment.Low.min()/stock_open-1)*100),2)}
-                        outcome.update(upside_metrics(segment,stock_open))
-                        # Existing completed returns are immutable when adding metrics.
-                        item['outcomes'][str(horizon)]={**outcome,**item['outcomes'].get(str(horizon),{})}
+                        end=entry+horizon-1
+                        if end<len(calendar):
+                            sessions=calendar[entry:end+1]
+                            if not sessions.isin(d.index).all():
+                                continue
+                            segment=d.loc[sessions]
+                            gross=float((segment.Close.iloc[-1]/stock_open-1)*100)
+                            br=float((benchmark.Close.iloc[end]/bench_open-1)*100)
+                            # Assumed 0.5% total dealing cost, not measured execution.
+                            net=float(((segment.Close.iloc[-1]/stock_open)*(1-.0025)/(1+.0025)-1)*100)
+                            outcome={'gross':round(gross,2),'net':round(net,2),
+                                'benchmark':round(br,2),'excess_net':round(net-br,2),
+                                'worst_excursion':round(float((segment.Low.min()/stock_open-1)*100),2)}
+                            outcome.update(upside_metrics(segment,stock_open))
+                            # Existing completed returns are immutable when adding metrics.
+                            item['outcomes'][str(horizon)]={**outcome,**item['outcomes'].get(str(horizon),{})}
         # Completed observations survive provider rolling-history limits and outages.
         signal['outcomes']=dict(item['outcomes'])
         if 'entry_date' in item:signal['entry_date']=item['entry_date']
@@ -189,7 +190,7 @@ def track(ledger, rows, frames, benchmark, asof, cfg, record=True):
     for h in cfg['forward_horizons']:
         aligned=[r['outcomes'][str(h)] for r in result if (r.get('momentum_confirmations') or 0)>=3
                  and str(h) in r['outcomes'] and r['model']==cfg['version']]
-        summary.append({'setup':'3–4 technical checks','horizon':h,'n':len(aligned),
+        summary.append({'setup':'3–4 current support checks','horizon':h,'n':len(aligned),
             'total':sum((r.get('momentum_confirmations') or 0)>=3 and r['model']==cfg['version'] for r in result),
             **upside_summary(aligned),
             'median_net':round(float(np.median([o['net'] for o in aligned])),2) if aligned else None,
@@ -243,16 +244,24 @@ def rank_themes(themes, previous=None):
 def attach_rotation_context(rows, themes):
     priority={'Leading':0,'Emerging':1,'Mature':2,'Mixed':3,'Weakening':4,'Avoid':5,'Insufficient coverage':6}
     curated=[t for t in themes if t['taxonomy']=='Curated theme']
+    industries={t['name']:t for t in themes if t['taxonomy']=='Industry'}
     for row in rows:
         memberships=[t for t in curated if row['isin'] in t['members']]
-        best=min(memberships,key=lambda t:(priority.get(t['status'],9),t['rank']),default=None)
+        memberships.sort(key=lambda t:(priority.get(t['status'],9),t['rank']))
+        best=memberships[0] if memberships else industries.get(row['sector'])
         row['theme_name']=best['name'] if best else None
         row['theme_state']=best['status'] if best else None
         row['theme_rank']=best['rank'] if best else None
+        row['theme_taxonomy']=best['taxonomy'] if best else None
+        row['theme_coverage']=best['coverage'] if best else None
+        row['theme_coverage_quality']=best['coverage_quality'] if best else None
+        row['theme_breadth_change']=best['breadth_change'] if best else None
+        row['stock_vs_theme_rs20']=round(row['rs20']-best['rs20'],2) if best and best.get('rs20') is not None else None
+        row['theme_memberships']=[{'name':t['name'],'state':t['status'],'rank':t['rank']} for t in memberships]
         supportive=best and best['status'] in ['Leading','Emerging']
         weak=best and best['status'] in ['Weakening','Avoid']
-        if row['candidate'] and row['momentum_confirmations']>=3 and supportive:
-            posture='Priority review'
+        if row['candidate'] and supportive:
+            posture='Sector-supported setup'
         elif row['vstop_bullish'] and row['obv_bullish'] and not weak:
             posture='Hold / monitor'
         elif not row['vstop_bullish'] or weak:
@@ -282,9 +291,9 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     theme_rows += [theme_summary(rows,set(t['members']),t['name'],'Curated theme') for t in themes]
     theme_rows=rank_themes(theme_rows,previous_themes)
     attach_rotation_context(rows,theme_rows)
-    posture={'Priority review':0,'Hold / monitor':1,'Watch':2,'Review / rotate':3}
-    rows.sort(key=lambda r:(not r['candidate'],posture[r['rotation_posture']],
-                            -r['momentum_confirmations'],-r['rs20'],-r['participation'],r['isin']))
+    posture={'Sector-supported setup':0,'Hold / monitor':1,'Watch':2,'Review / rotate':3}
+    rows.sort(key=lambda r:(not r['candidate'],-r['rs20'],-r['participation'],
+                            posture[r['rotation_posture']],r['isin']))
     ledger,tracking,summary=track(ledger,rows,frames,benchmark,asof,cfg,record)
     for row in rows:
         signals=[s for s in tracking if s['isin']==row['isin'] and s['model']==cfg['version']]
@@ -301,7 +310,8 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     sma50=float(np.mean(bc[-50:]));sma200=float(np.mean(bc[-200:])) if len(bc)>=200 else None
     regime=('Bull' if bc[-1]>sma50 and (sma200 is None or bc[-1]>sma200) and pct(bc,20)>0 else
             'Defensive' if bc[-1]<sma50 and sma200 is not None and bc[-1]<sma200 else 'Mixed')
-    market={'benchmark':'Nifty 50','r20':round(float((bc[-1]/bc[-21]-1)*100),2),
+    market={'benchmark':cfg.get('benchmark_name','Nifty 500'),'ticker':cfg['benchmark'],
+            'r20':round(float((bc[-1]/bc[-21]-1)*100),2),
             'breadth':round(float(np.mean([r['above50'] for r in rows]))*100,1) if rows else None,
             'regime':regime,'above50':bool(bc[-1]>sma50),'above200':bool(bc[-1]>sma200) if sma200 else None}
     rotation={'leaders':[t['name'] for t in theme_rows if t['taxonomy']=='Curated theme' and t['status'] in ['Leading','Emerging']][:5],

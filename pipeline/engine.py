@@ -219,7 +219,8 @@ def analyze(meta, d, benchmark, asof, cfg):
         reasons.append(f"Held above the prior {anchor['window']}-session high for {anchor['held_sessions']} closes")
     if technical_ok:
         reasons.append('Above rising 20-session and 50-session averages; positive 5-session move')
-    reasons += [f"20-session return exceeds Nifty 50 by {rs20:.1f} percentage points",
+    benchmark_name=cfg.get('benchmark_name','Nifty 500')
+    reasons += [f"20-session return exceeds {benchmark_name} by {rs20:.1f}%",
                 f"Recent median cash turnover is {participation:.2f}× its earlier baseline"]
     if event: risks.append('Large single-session move; investigate the event')
     if extended: risks.append('Extended from the breakout or short-term trend; chase risk')
@@ -228,11 +229,19 @@ def analyze(meta, d, benchmark, asof, cfg):
     # Quotes and levels use the latest raw-price scale, charts use adjusted prices.
     raw_factor = float(d['Adj Close'].iloc[-1] / d.RawClose.iloc[-1])
     raw_factor = raw_factor if np.isfinite(raw_factor) and raw_factor>0 else 1
+    volume=d.Volume.to_numpy(float)
+    direction=np.diff(c[-21:])
+    directional_volume=volume[-20:]
+    up_volume=float(directional_volume[direction>0].sum())
+    down_volume=float(directional_volume[direction<0].sum())
+    directional_total=up_volume+down_volume
+    up_volume_share=100*up_volume/directional_total if directional_total else None
     row = {'isin':meta['isin'],'symbol':meta['nse'],'yahoo':meta['yahoo'],
            'name':meta['name'],'sector':meta['industry_group'],'asof':asof,
            'last':round(float(c[-1]/raw_factor),2),'r5':round(r5,2),'r20':round(r20,2),
            'r60':round(r60,2),'rs20':round(rs20,2),'rs60':round(rs60,2),
            'turnover_cr':round(turn,2),'participation':round(participation,2),
+           'up_volume_share_20':round(up_volume_share,1) if up_volume_share is not None else None,
            'momentum_12_1':round(long_momentum,2) if long_momentum is not None else None,
            'above20':bool(c[-1]>sma20),'above20_week_ago':bool(c[-6]>np.mean(c[-25:-5])),
            'above50':bool(c[-1]>sma50),'above50_week_ago':bool(c[-6]>np.mean(c[-55:-5])),
@@ -257,7 +266,11 @@ def analyze(meta, d, benchmark, asof, cfg):
 def theme_summary(rows, members, name, taxonomy):
     usable = [r for r in rows if r['isin'] in members]
     coverage = len(usable)/len(members) if members else 0
-    enough = len(usable)>=3 and coverage>=.7
+    # Large current registries should not become permanently unclassifiable just
+    # because some members fail today's liquidity/history checks. Require a
+    # meaningful sample and expose its partial coverage instead of hiding it.
+    minimum_required=max(3,min(8,int(np.ceil(len(members)*.3)))) if members else 3
+    enough = len(usable)>=minimum_required
     vals = lambda k: [r[k] for r in usable if r.get(k) is not None]
     breadth = float(np.mean(vals('above50'))*100) if vals('above50') else None
     breadth20 = float(np.mean(vals('above20'))*100) if vals('above20') else None
@@ -276,7 +289,9 @@ def theme_summary(rows, members, name, taxonomy):
                   'Mature' if rs60>0 and breadth>=60 and (delta<0 or rs20<rs60/3) else
                   'Leading' if rs20>0 and rs60>0 and breadth>=60 and vstop_share>=55 else 'Mixed')
     return {'name':name,'taxonomy':taxonomy,'members':sorted(members),'resolved':len(usable),
-            'total':len(members),'coverage':round(coverage*100,1),'status':status,
+            'total':len(members),'coverage':round(coverage*100,1),
+            'coverage_quality':'Broad' if coverage>=.7 else 'Partial',
+            'minimum_required':minimum_required,'status':status,
             'r5':median('r5'),'r20':median('r20'),'r60':median('r60'),
             'rs20':median('rs20'),'rs60':median('rs60'),
             'breadth20':round(breadth20,1) if breadth20 is not None else None,

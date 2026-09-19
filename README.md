@@ -14,7 +14,7 @@ A daily Indian-equity research workspace for **confirmed moves** and **leaders r
 - Immutable first daily snapshots, a detection ledger, and prospective 5/10/20/40-session outcomes.
 - A visible refresh-health state. Failed or incomplete refreshes preserve the last successful snapshot.
 
-The initial thresholds are **new research hypotheses**, not validated trading signals. They do not revive the retired R2/R5 strategies. The four momentum checks rank confirmed moves but do not admit pre-breakout stocks or claim remaining upside. A confirmed price move can fail. See [the full specification](docs/METHODOLOGY.md).
+The initial thresholds are **new research hypotheses**, not validated trading signals. They do not revive the retired R2/R5 strategies. The four support checks describe confirmed moves but do not admit pre-breakout stocks, form a combined score or claim remaining upside. A confirmed price move can fail. See [the full specification](docs/METHODOLOGY.md).
 
 ## Publish on GitHub Pages
 
@@ -68,7 +68,7 @@ The repository and market data are public. Your watchlist and notes are saved on
 
 The registry is a curated subset of NSE securities, not a maintained full-exchange listing. Update symbols and theme memberships deliberately, preserve ISIN identity, and record the effective date. Market-cap values inherited in the CSV are not used for historical filtering or theme weights.
 
-Any rule change must increment `config/model.json`'s version and be documented. Do not retune a rule because a few recent charts look attractive. Keep old detection records and report results by model version. Nifty 50 is the explicit comparison benchmark; this does not establish smallcap- or sector-adjusted alpha.
+Any rule change must increment `config/model.json`'s version and be documented. Do not retune a rule because a few recent charts look attractive. Keep old detection records and report results by model version. Nifty 500 (`^CRSLDX`) is the explicit comparison benchmark; this does not establish sector-adjusted alpha.
 
 Source assets: [jalanaditya30/Sector-data](https://github.com/jalanaditya30/Sector-data), copied with the owner's authorization. Existing historical strategy results have not been transferred as validation of this new app.
 
@@ -76,7 +76,7 @@ Source assets: [jalanaditya30/Sector-data](https://github.com/jalanaditya30/Sect
 
 Open **Evidence** in the app for published results. The first run is started by the research implementation commit; subsequent runs can be requested under **Actions → Five-year historical evaluation**. It downloads seven years to supply a five-year evaluation plus trailing warmup.
 
-The [frozen protocol](research/PROTOCOL.md) specifies next-open entries, costs, Nifty Midcap 150 comparison, chronological development/validation/holdout periods, three limited alternatives, and a finite-capital portfolio. The research code is tested against the live detector for identical past-only signals. A selected historical filter is not automatically promoted into live rules.
+The [frozen protocol](research/PROTOCOL.md) specifies next-open entries, costs, Nifty 500 comparison, chronological development/validation/holdout periods, three limited alternatives, and a finite-capital portfolio. The research code is tested against the live detector for identical past-only signals. A selected historical filter is not automatically promoted into live rules.
 
 ```bash
 python -m pipeline.backtest

@@ -12,7 +12,7 @@ import pandas as pd
 
 from pipeline.refresh import ROOT, fetch, read, write, expected_session
 
-BENCH='NIFTYMIDCAP150.NS'
+BENCH='^CRSLDX'
 HORIZONS=[5,10,20,40,60]
 VARIANTS=['baseline','no_chase','market_trend','combined']
 
@@ -216,11 +216,14 @@ def run():
     cfg=read(ROOT/'config/model.json',{});universe=list(csv.DictReader(open(ROOT/'config/universe.csv')))
     if args.limit:universe=universe[:args.limit]
     requested=expected_session();cache=ROOT/'tmp/backtest-prices';cache.mkdir(parents=True,exist_ok=True)
-    tickers=list(dict.fromkeys([cfg['benchmark'],BENCH]+[r['yahoo'] for r in universe]))
+    tickers=list(dict.fromkeys([BENCH]+[r['yahoo'] for r in universe]))
     frames={}
     if args.cached and read(cache/'requested.json',{}).get('session')==requested:
         for p in cache.glob('*.csv.gz'):
             d=pd.read_csv(p,index_col=0,parse_dates=True);frames[p.name[:-7]]=d
+        # Old caches may retain retired benchmarks. They must not inflate the
+        # current-universe coverage count or enter the reproducibility manifest.
+        frames={ticker:d for ticker,d in frames.items() if ticker in tickers}
     missing=[t for t in tickers if t not in frames]
     if missing:frames.update(fetch(missing,requested,require_current=False,period='7y'))
     write(cache/'requested.json',{'session':requested})
@@ -229,8 +232,8 @@ def run():
         target=cache/f'{t}.csv.gz';d.to_csv(target,compression={'method':'gzip','mtime':0})
         manifests.append({'ticker':t,'rows':len(d),'first':str(d.index[0].date()),'last':str(d.index[-1].date()),'sha256':hashlib.sha256(target.read_bytes()).hexdigest()})
     write(cache/'manifest.json',manifests)
-    if cfg['benchmark'] not in frames or BENCH not in frames:raise RuntimeError('Both Nifty 50 and Nifty Midcap 150 histories are required; no substitute index used')
-    b=frames[cfg['benchmark']];mid=frames[BENCH]
+    if BENCH not in frames:raise RuntimeError('Nifty 500 history is required; no substitute index used')
+    b=frames[BENCH];mid=b
     end=min(b.index[-1],mid.index[-1]);start=end-pd.DateOffset(years=5)
     b=b.loc[:end];mid=mid.reindex(b.index)
     benchmark_gaps=[str(x.date()) for x in mid.loc[start:end].index[mid.loc[start:end,'Close'].isna()]]
@@ -252,7 +255,7 @@ def run():
         if d is None:missing_symbols.append(meta['nse']);continue
         rs,e=episodes(meta,d,b,cfg,start,end,mid);records.extend(rs);eligible+=e.astype(int)
         if n%100==0:print(f'evaluated {n+1}/{len(universe)}: {len(records)} episodes',flush=True)
-    if len(frames)-2<len(universe)*.85:raise RuntimeError('Historical symbol coverage below 85%; refusing a partial-universe headline result')
+    if len(frames)-1<len(universe)*.85:raise RuntimeError('Historical symbol coverage below 85%; refusing a partial-universe headline result')
     variants={name:{partition:summarize(records,20,*ranges[partition],name) for partition in ['development','validation']} for name in VARIANTS}
     # This choice is completed before any holdout statistics are read.
     chosen=choose(variants)
@@ -265,11 +268,11 @@ def run():
     hold=variants[chosen]['holdout'];ci=hold.get('excess_ci95');p=ports[chosen]['holdout']
     supported=bool(hold.get('n',0)>=100 and ci and ci[0]>0 and p and p['cagr']>p['benchmark_cagr_yield_adjusted'])
     report={'schema':1,'status':'complete','model':cfg['version'],'generated':datetime.now(timezone.utc).isoformat(),
-        'benchmark':{'name':'Nifty Midcap 150','ticker':BENCH,'type':'price index','dividend_sensitivity':'Additional 2% annual benchmark yield; not an official TRI'},
+        'benchmark':{'name':'Nifty 500','ticker':BENCH,'type':'price index','dividend_sensitivity':'Additional 2% annual benchmark yield; not an official TRI'},
         'ranges':ranges,'selected_variant':chosen,'holdout_supports_candidate':supported,
         'conclusion':'Positive holdout evidence, subject to material survivorship and execution limitations.' if supported else 'The holdout does not establish reliable index-beating performance. Do not treat confirmation as a profitable edge.',
         'variants':variants,'results':results,'annual':annual,'setups':setups,'portfolios':ports,
-        'coverage':{'registry':len(universe),'downloaded':len(frames)-2,'missing_symbols':missing_symbols,
+        'coverage':{'registry':len(universe),'downloaded':len(frames)-1,'missing_symbols':missing_symbols,
                     'benchmark_missing_sessions':benchmark_gaps,
                     'daily_min_eligible':int(eligible.loc[start:end].min()),'daily_median_eligible':int(eligible.loc[start:end].median()),
                     'episodes':len(records),'input_manifest_sha256':hashlib.sha256(json.dumps(manifests,sort_keys=True).encode()).hexdigest()},

@@ -3,8 +3,8 @@ const {JSDOM}=require('jsdom');
 const fs=require('node:fs');
 const assert=require('node:assert/strict');
 const html=fs.readFileSync('index.html','utf8'),code=fs.readFileSync('app.js','utf8');
-const base={isin:'INE000000001',symbol:'TEST',name:'Synthetic Test Company',sector:'Test industry',asof:'2026-09-18',last:114,r5:4,r20:12,rs20:10,rs60:15,turnover_cr:12,participation:2,extension:3,candidate:true,setup:'Confirmed moves',stage:'Confirmed move',rotation_posture:'Priority review',momentum_confirmations:4,momentum_checks:['VStop bullish','OBV MACD bullish','Directional trend','Efficient advance'],vstop:108,vstop_bullish:true,vstop_distance:5.5,obv_bullish:true,obv_flip:false,adx:31,plus_di:29,minus_di:12,efficiency_20:.55,atr_pct:2.1,theme_name:'Test theme',theme_state:'Leading',theme_rank:1,anchor:110,anchor_adjusted:110,leader:true,reasons:['Held above reference'],risks:['Synthetic test'],tracking:null};
-const snapshot={schema:1,status:'ready',asof:'2026-09-18',rows:[base,{...base,isin:'INE000000002',symbol:'OTHER',name:'Other Test Company',candidate:false,setup:'Other',stage:'Trend intact',leader:false}],themes:[{name:'Test theme',taxonomy:'Curated theme',members:[base.isin],status:'Leading',rank:1,rank_change:1,r20:12,r60:20,breadth:80,breadth_change:10,vstop_bullish:75,resolved:3,total:3,rs20:10,rs60:15}],rotation:{leaders:['Test theme'],review:[]},summary:[],tracking:[],market:{r20:2,breadth:60,regime:'Bull'},coverage:{fresh:2,universe:2,eligible:2,reasons:{}},excluded:[]};
+const base={isin:'INE000000001',symbol:'TEST',name:'Synthetic Test Company',sector:'Test industry',asof:'2026-09-18',last:114,r5:4,r20:12,rs20:10,rs60:15,turnover_cr:12,participation:2,up_volume_share_20:62,extension:3,candidate:true,setup:'Confirmed moves',stage:'Confirmed move',rotation_posture:'Sector-supported setup',momentum_confirmations:4,momentum_checks:['VStop bullish','OBV MACD bullish','Directional trend','Efficient advance'],vstop:108,vstop_bullish:true,vstop_distance:5.5,obv_bullish:true,obv_flip:false,adx:31,plus_di:29,minus_di:12,efficiency_20:.55,atr_pct:2.1,theme_name:'Test theme',theme_state:'Leading',theme_rank:1,theme_taxonomy:'Curated theme',theme_breadth_change:10,stock_vs_theme_rs20:2,theme_memberships:[{name:'Test theme',state:'Leading',rank:1}],anchor:110,anchor_adjusted:110,leader:true,reasons:['Held above reference'],risks:['Synthetic test'],tracking:null};
+const snapshot={schema:1,status:'ready',asof:'2026-09-18',policy:{benchmark:'^CRSLDX',benchmark_name:'Nifty 500'},rows:[base,{...base,isin:'INE000000002',symbol:'OTHER',name:'Other Test Company',candidate:false,setup:'Other',stage:'Trend intact',leader:false}],themes:[{name:'Test theme',taxonomy:'Curated theme',members:[base.isin],status:'Leading',rank:1,rank_change:1,r20:12,r60:20,breadth:80,breadth_change:10,vstop_bullish:75,resolved:3,total:3,coverage_quality:'Broad',rs20:10,rs60:15}],rotation:{leaders:['Test theme'],review:[]},summary:[],tracking:[],market:{benchmark:'Nifty 500',ticker:'^CRSLDX',r20:2,breadth:60,regime:'Bull'},coverage:{fresh:2,universe:2,eligible:2,reasons:{}},excluded:[]};
 async function boot(data=snapshot,chartDate=data.asof,research=null){
  const dom=new JSDOM(html,{url:'https://example.test/Stocks/',runScripts:'outside-only'}),w=dom.window;
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true};
@@ -30,10 +30,10 @@ async function boot(data=snapshot,chartDate=data.asof,research=null){
  d.querySelector('#clear-theme').click();assert.equal(d.querySelectorAll('#stock-rows tr').length,2);
  let search=d.querySelector('#search');search.value='OTHER';search.dispatchEvent(new w.Event('input'));assert.equal(d.querySelectorAll('#stock-rows tr').length,1);assert.match(d.querySelector('#stock-rows').textContent,/Other Test/);
  dom.window.close();
- ({dom,w,d}=await boot({schema:1,status:'awaiting_first_scan',asof:null,rows:[],themes:[],tracking:[],summary:[]}));
+ ({dom,w,d}=await boot({schema:1,status:'awaiting_first_scan',asof:null,policy:{benchmark:'^CRSLDX'},rows:[],themes:[],tracking:[],summary:[]}));
  assert.match(d.querySelector('#empty').textContent,/Waiting for the first/);assert.equal(d.querySelectorAll('#stock-rows tr').length,0);assert.match(d.querySelector('#stats').textContent,/—/);dom.window.close();
  ({dom,w,d}=await boot(snapshot,'2026-09-17'));d.querySelector('[data-stock]').click();await new Promise(r=>setImmediate(r));assert.match(d.querySelector('#detail-chart').textContent,/sessions differ/);dom.window.close();
- const report=JSON.parse(fs.readFileSync('data/backtest/report.json','utf8'));
+ const report=JSON.parse(fs.readFileSync('data/backtest/report.json','utf8'));report.benchmark={...report.benchmark,name:'Nifty 500',ticker:'^CRSLDX'};
  ({dom,w,d}=await boot({...snapshot,freshness:'delayed',expected_session:'2026-09-21',tracking:[{isin:'INE000000003',symbol:'NO_LONGER_ELIGIBLE',setup:'Confirmed moves',first_seen:'2026-09-01',state:'Below breakout level',outcomes:{'5':{best_excursion:6,worst_excursion:-7,net:-3,'5_before_minus5':'ambiguous_same_session'}}}]},snapshot.asof,report));
  d.querySelector('[data-view="evidence"]').click();
  assert.match(d.querySelector('#historical-upside').textContent,/Reached \+5%/);
@@ -42,6 +42,7 @@ async function boot(data=snapshot,chartDate=data.asof,research=null){
  assert.match(d.querySelector('#journal').textContent,/ambiguous same session/);
  assert.equal(d.querySelector('#journal [data-stock]'),null,'unavailable stock is still recorded without a broken detail link');
  assert.match(d.querySelector('#health').textContent,/Delayed snapshot/);
+ assert.doesNotMatch(d.body.textContent,/\bpp\b|percentage points|Midcap 150/);
  assert.equal(d.querySelector('#historical-research').parentElement.tagName,'DETAILS');
  dom.window.close();
  console.log('UI integration passed: confirmed defaults, watchlist, notes, review, theme filter, search, pending state and mismatched charts.');

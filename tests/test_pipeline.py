@@ -27,6 +27,11 @@ class ConfirmationTests(unittest.TestCase):
         self.raw,self.bench,self.asof=fixture()
         self.d=normalized(self.raw,self.asof);self.b=normalized(self.bench,self.asof)
 
+    def test_nifty_500_is_the_versioned_benchmark(self):
+        self.assertEqual(CFG['benchmark'],'^CRSLDX')
+        self.assertEqual(CFG['benchmark_name'],'Nifty 500')
+        self.assertIn('nifty500',CFG['version'])
+
     def test_held_breakout_qualifies_with_explainable_reasons(self):
         row,error=analyze(META,self.d,self.b,self.asof,CFG)
         self.assertIsNone(error);self.assertTrue(row['candidate'])
@@ -104,8 +109,8 @@ class ConfirmationTests(unittest.TestCase):
 class PublicationAndTrackingTests(unittest.TestCase):
     def setUp(self):
         raw,bench,self.asof=fixture()
-        self.frames={'TEST.NS':normalized(raw,self.asof),'^NSEI':normalized(bench,self.asof)}
-        self.row,_=analyze(META,self.frames['TEST.NS'],self.frames['^NSEI'],self.asof,CFG)
+        self.frames={'TEST.NS':normalized(raw,self.asof),CFG['benchmark']:normalized(bench,self.asof)}
+        self.row,_=analyze(META,self.frames['TEST.NS'],self.frames[CFG['benchmark']],self.asof,CFG)
 
     def test_low_coverage_aborts_publication(self):
         universe=[META,{**META,'isin':'INE000000002','yahoo':'MISS.NS'}]
@@ -115,22 +120,22 @@ class PublicationAndTrackingTests(unittest.TestCase):
     def test_delayed_snapshot_uses_one_common_date_without_weakening_coverage(self):
         frames={**self.frames,'OTHER.NS':self.frames['TEST.NS'].iloc[:-1]}
         universe=[META,{**META,'yahoo':'OTHER.NS'}]
-        chosen=select_session(universe,frames,frames['^NSEI'],self.asof,.85)
+        chosen=select_session(universe,frames,frames[CFG['benchmark']],self.asof,.85)
         self.assertEqual(chosen,str(frames['OTHER.NS'].index[-1].date()))
         frames['OTHER.NS']=frames['OTHER.NS'].iloc[:-10]
-        with self.assertRaises(RuntimeError):select_session(universe,frames,frames['^NSEI'],self.asof,.85)
+        with self.assertRaises(RuntimeError):select_session(universe,frames,frames[CFG['benchmark']],self.asof,.85)
 
     def test_no_same_close_profit_and_no_duplicate_detection(self):
-        ledger,tracking,summary=track([], [self.row],self.frames,self.frames['^NSEI'],self.asof,CFG)
+        ledger,tracking,summary=track([], [self.row],self.frames,self.frames[CFG['benchmark']],self.asof,CFG)
         self.assertEqual(len(ledger),1);self.assertEqual(tracking[0]['outcomes'],{})
-        ledger2,_,_=track(copy.deepcopy(ledger),[self.row],self.frames,self.frames['^NSEI'],self.asof,CFG)
+        ledger2,_,_=track(copy.deepcopy(ledger),[self.row],self.frames,self.frames[CFG['benchmark']],self.asof,CFG)
         self.assertEqual(ledger,ledger2)
 
     def test_forward_returns_start_next_open_and_need_complete_horizon(self):
         seen=str(self.frames['TEST.NS'].index[-6].date())
         signal={'id':'x','isin':META['isin'],'symbol':'TEST','yahoo':'TEST.NS','setup':'Confirmed moves',
                 'first_seen':seen,'breakout_date':seen,'window':60,'model':CFG['version']}
-        _,tracking,_=track([signal],[],self.frames,self.frames['^NSEI'],self.asof,CFG)
+        _,tracking,_=track([signal],[],self.frames,self.frames[CFG['benchmark']],self.asof,CFG)
         o=tracking[0]['outcomes'];self.assertIn('5',o);self.assertNotIn('10',o)
         d=self.frames['TEST.NS'];expected=(d.Close.iloc[-1]/d.Open.iloc[-5]-1)*100
         self.assertAlmostEqual(o['5']['gross'],expected,places=2)
@@ -138,19 +143,27 @@ class PublicationAndTrackingTests(unittest.TestCase):
 
     def test_rising_breakout_reference_does_not_duplicate_same_move(self):
         old={**self.row,'breakout_date':str(self.frames['TEST.NS'].index[-3].date())}
-        ledger,_,_=track([], [old],self.frames,self.frames['^NSEI'],self.asof,CFG)
+        ledger,_,_=track([], [old],self.frames,self.frames[CFG['benchmark']],self.asof,CFG)
         newer={**self.row,'breakout_date':str(self.frames['TEST.NS'].index[-2].date())}
-        ledger,_,_=track(ledger,[newer],self.frames,self.frames['^NSEI'],self.asof,CFG)
+        ledger,_,_=track(ledger,[newer],self.frames,self.frames[CFG['benchmark']],self.asof,CFG)
         self.assertEqual(len(ledger),1)
 
     def test_completed_observations_survive_missing_provider_history(self):
         seen=str(self.frames['TEST.NS'].index[-6].date())
         signal={'id':'x','isin':META['isin'],'symbol':'TEST','yahoo':'TEST.NS','setup':'Confirmed moves',
                 'first_seen':seen,'breakout_date':seen,'window':60,'model':CFG['version']}
-        ledger,tracking,_=track([signal],[],self.frames,self.frames['^NSEI'],self.asof,CFG)
-        _,missing,summary=track(ledger,[],{},self.frames['^NSEI'],self.asof,CFG)
+        ledger,tracking,_=track([signal],[],self.frames,self.frames[CFG['benchmark']],self.asof,CFG)
+        _,missing,summary=track(ledger,[],{},self.frames[CFG['benchmark']],self.asof,CFG)
         self.assertEqual(missing[0]['outcomes'],tracking[0]['outcomes'])
         self.assertEqual(summary[0]['n'],1)
+
+    def test_old_model_does_not_mature_against_new_benchmark(self):
+        seen=str(self.frames['TEST.NS'].index[-6].date())
+        signal={'id':'old','isin':META['isin'],'symbol':'TEST','yahoo':'TEST.NS','setup':'Confirmed moves',
+                'first_seen':seen,'breakout_date':seen,'window':60,'model':'confirmed-v1','outcomes':{}}
+        ledger,tracking,_=track([signal],[],self.frames,self.frames[CFG['benchmark']],self.asof,CFG)
+        self.assertEqual(ledger[0]['outcomes'],{})
+        self.assertEqual(tracking[0]['outcomes'],{})
 
     def test_low_theme_coverage_does_not_claim_improvement(self):
         result=theme_summary([self.row],{META['isin'],'x','y','z'},'Theme','Curated theme')

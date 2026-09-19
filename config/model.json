@@ -1,9 +1,10 @@
 {
-  "version": "confirmed-v1",
+  "version": "confirmed-v2-nifty500",
   "min_turnover_cr": 2.0,
   "min_history": 130,
   "min_coverage": 0.85,
-  "benchmark": "^NSEI",
+  "benchmark": "^CRSLDX",
+  "benchmark_name": "Nifty 500",
   "min_participation": 1.2,
   "max_extension_pct": 8.0,
   "max_sma_extension_pct": 12.0,
