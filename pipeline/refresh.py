@@ -94,6 +94,12 @@ def select_session(universe,frames,benchmark,expected,minimum,max_lag=3):
     raise RuntimeError(f'No common session within {max_lag} exchange sessions meets {minimum:.0%} price coverage')
 
 
+def replacing_newer_same_model(previous, asof, cfg):
+    """Protect chronology within a model without blocking a benchmark migration."""
+    return bool(previous.get('asof') and previous['asof']>asof and
+                previous.get('model')==cfg['version'])
+
+
 def track(ledger, rows, frames, benchmark, asof, cfg, record=True):
     """First detection is immutable; next-session open is the executable baseline."""
     benchmark=benchmark.loc[:asof]
@@ -345,7 +351,8 @@ def main():
     history=DATA/'history'/cfg['version']/f'{asof}.json'
     frames={t:d.loc[:asof] for t,d in frames.items() if not d.loc[:asof].empty}
     previous=read(DATA/'latest.json',{})
-    if previous.get('asof') and previous['asof']>asof:raise RuntimeError('Refusing to replace a newer snapshot')
+    if replacing_newer_same_model(previous,asof,cfg):
+        raise RuntimeError('Refusing to replace a newer snapshot of the same model')
     current=asof==expected
     payload,charts,ledger=build(universe,frames,asof,cfg,read(ROOT/'config/themes.json',[]),ledger,
                                 current and not history.exists(),previous.get('themes',[]))

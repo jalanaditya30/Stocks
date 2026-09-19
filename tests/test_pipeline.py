@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from pipeline.engine import normalized, analyze, crossed_and_held, theme_summary
-from pipeline.refresh import build, track, expected_session, select_session
+from pipeline.refresh import build, track, expected_session, replacing_newer_same_model, select_session
 
 CFG=json.loads((Path(__file__).resolve().parents[1]/'config/model.json').read_text())
 META={'isin':'INE000000001','nse':'TEST','yahoo':'TEST.NS','name':'Test company','industry_group':'Test industry'}
@@ -124,6 +124,12 @@ class PublicationAndTrackingTests(unittest.TestCase):
         self.assertEqual(chosen,str(frames['OTHER.NS'].index[-1].date()))
         frames['OTHER.NS']=frames['OTHER.NS'].iloc[:-10]
         with self.assertRaises(RuntimeError):select_session(universe,frames,frames[CFG['benchmark']],self.asof,.85)
+
+    def test_benchmark_migration_can_publish_a_labelled_older_common_session(self):
+        previous={'asof':'2026-09-18','model':'confirmed-v1'}
+        self.assertFalse(replacing_newer_same_model(previous,'2026-09-17',CFG))
+        previous['model']=CFG['version']
+        self.assertTrue(replacing_newer_same_model(previous,'2026-09-17',CFG))
 
     def test_no_same_close_profit_and_no_duplicate_detection(self):
         ledger,tracking,summary=track([], [self.row],self.frames,self.frames[CFG['benchmark']],self.asof,CFG)
