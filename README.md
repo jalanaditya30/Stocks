@@ -9,9 +9,9 @@ A daily Indian-equity research workspace for **confirmed moves** and **leaders r
 - Curated themes and industries ranked as Leading, Emerging, Mature, Mixed, Weakening or Avoid, with scan-to-scan rank movement.
 - Visible VStop, OBV MACD, ADX/DI and Efficiency Ratio checks that describe whether a confirmed move still has technical support.
 - Established long-term momentum leaders as a separate context view.
-- Interactive candlestick/volume charts with OHLCV crosshairs, VStop, breakout and first-detection markers, plus TradingView and Screener links.
+- Interactive candlestick/volume charts from 1 January with OHLCV crosshairs, VStop, breakout and first-detection markers, plus dense two-column chart scans for watchlists and theme/industry groups.
 - Sortable volume 5D/30D and 20-day turnover/market-cap context alongside the existing cash-turnover confirmation.
-- Browser-local watchlist, review/dismiss decisions, notes, and export/import.
+- Browser-local saved and uploaded-symbol watchlists, review/dismiss decisions, notes, and export/import. Uploaded lists accept comma-separated `NSE:`/`BSE:` symbols and do not leave the browser.
 - Immutable first daily snapshots, a detection ledger, and prospective 5/10/20/40-session outcomes.
 - A visible refresh-health state. Failed or incomplete refreshes preserve the last successful snapshot.
 

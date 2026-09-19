@@ -9,17 +9,20 @@ const pct=v=>v==null?'—':`${v>0?'+':''}${num(v)}%`;
 const rate=v=>v==null?'—':num(v)+'%';
 const color=v=>v>0?'positive':v<0?'negative':'';
 const KEY='stocks-workspace-v1';
+const CUSTOM_KEY='stocks-custom-watchlist-v1';
 let historical=null,researchCandidate=null;
-let D={rows:[],themes:[],tracking:[],summary:[]},health={},charts=null,workspace={},view='overview',theme=null,all=false,detail=null,toastTimer;
+let D={rows:[],themes:[],tracking:[],summary:[]},health={},charts=null,workspace={},customSymbols=[],view='overview',theme=null,all=false,detail=null,bulkScope=null,bulkShown=12,toastTimer;
 try{const saved=JSON.parse(localStorage.getItem(KEY)||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))workspace=saved;}catch{}
+try{const saved=JSON.parse(localStorage.getItem(CUSTOM_KEY)||'[]');if(Array.isArray(saved))customSymbols=saved.filter(x=>typeof x==='string');}catch{}
 const pref=isin=>workspace[isin]||{};
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,3200);}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(workspace));}catch{toast('Browser storage unavailable. Export your workspace to retain changes.');}}
+function saveCustom(){try{localStorage.setItem(CUSTOM_KEY,JSON.stringify(customSymbols));}catch{toast('Browser storage unavailable. Export your workspace to retain changes.');}}
 function setPref(isin,update){workspace[isin]={...pref(isin),...update};save();}
 function watched(isin){return pref(isin).watch===true;}
 function stockById(id){return D.rows.find(r=>r.isin===id);}
-function changeView(next){view=next;all=false;theme=null;if(next==='watchlist')$('setup').value='all';else $('setup').value='confirmed';render();}
-const titles={overview:['THE DAILY PICTURE','Moves with follow-through.','Confirmed stock moves. Strengthening themes. A clearer place to start.'],candidates:['FROM OBSERVATION TO INVESTIGATION','Find your next research idea.','Price confirmation comes first. Then inspect participation, context and risk.'],themes:['THE BIGGER PICTURE','Follow strength as it spreads.','See the typical member, the breadth of a move, and the leaders within it.'],watchlist:['YOUR WORKING SET','Keep the ideas. Track the change.','Your saved stocks and review notes, kept privately in this browser.'],evidence:['THE PROSPECTIVE RECORD','Evidence before conviction.','First detections stay on record. Good outcomes and failed setups both count.']};
+function changeView(next){view=next;all=false;theme=null;bulkScope=null;if(['watchlist','custom'].includes(next))$('setup').value='all';else $('setup').value='confirmed';render();}
+const titles={overview:['THE DAILY PICTURE','Moves with follow-through.','Confirmed stock moves. Strengthening themes. A clearer place to start.'],candidates:['FROM OBSERVATION TO INVESTIGATION','Find your next research idea.','Price confirmation comes first. Then inspect participation, context and risk.'],themes:['THE BIGGER PICTURE','Follow strength as it spreads.','See the typical member, the breadth of a move, and the leaders within it.'],watchlist:['YOUR WORKING SET','Keep the ideas. Track the change.','Your saved stocks and review notes, kept privately in this browser.'],custom:['YOUR UPLOADED SET','Custom watchlist. Same analysis.','Upload NSE/BSE symbols, inspect the technical context, then scan every chart together.'],evidence:['THE PROSPECTIVE RECORD','Evidence before conviction.','First detections stay on record. Good outcomes and failed setups both count.']};
 
 function themeCard(t){const state=['Leading','Emerging'].includes(t.status)?'green':['Weakening','Avoid'].includes(t.status)?'amber':'';
  const move=t.rank_change==null?'New rank':t.rank_change>0?`↑ ${t.rank_change}`:t.rank_change<0?`↓ ${Math.abs(t.rank_change)}`:'—';
@@ -27,8 +30,9 @@ function themeCard(t){const state=['Leading','Emerging'].includes(t.status)?'gre
 }
 
 function filtered(){const q=$('search').value.trim().toLowerCase(),setup=$('setup').value,stage=$('stage').value,review=$('review-filter').value;
- let rows=D.rows.filter(r=>{
-   if(view==='watchlist'&&!watched(r.isin))return false;
+	 let rows=D.rows.filter(r=>{
+	   if(view==='watchlist'&&!watched(r.isin))return false;
+	   if(view==='custom'&&!customSymbols.includes(String(r.symbol).toUpperCase()))return false;
    if(theme&&!theme.members.includes(r.isin))return false;
    if(q&&![r.name,r.symbol,r.sector].join(' ').toLowerCase().includes(q))return false;
    if(setup==='confirmed'&&!r.candidate)return false;
@@ -43,22 +47,34 @@ function filtered(){const q=$('search').value.trim().toLowerCase(),setup=$('setu
  const k=$('sort').value;
  rows.sort((a,b)=>k==='newest'?String(b.tracking?.first_seen||'').localeCompare(String(a.tracking?.first_seen||''))||(b.stock_vs_industry_r20??-Infinity)-(a.stock_vs_industry_r20??-Infinity):
    (b[k]??-Infinity)-(a[k]??-Infinity)||b.participation-a.participation||a.symbol.localeCompare(b.symbol));
- return rows;
+	 return rows;
+}
+
+function currentGroupRows(){
+	 if(theme)return D.rows.filter(r=>theme.members.includes(r.isin));
+	 if(view==='watchlist')return D.rows.filter(r=>watched(r.isin));
+	 if(view==='custom'){const bySymbol=new Map(D.rows.map(r=>[String(r.symbol).toUpperCase(),r]));return customSymbols.map(s=>bySymbol.get(s)).filter(Boolean);}
+	 return [];
 }
 
 function renderStocks(){const rows=filtered(),limit=view==='overview'&&!all?15:100,shown=rows.slice(0,all?rows.length:limit);
- $('list-title').textContent=theme?theme.name:view==='watchlist'?'Saved for investigation':view==='overview'?'Your review list':'Stock moves';
- $('result-count').textContent=`${shown.length} of ${rows.length} matching`;
+	 $('list-title').textContent=theme?theme.name:view==='watchlist'?'Saved for investigation':view==='custom'?'Uploaded symbols':view==='overview'?'Your review list':'Stock moves';
+	 $('result-count').textContent=`${shown.length} of ${rows.length} matching`;
+	 const groupRows=currentGroupRows();$('all-charts').hidden=!groupRows.length;$('all-charts').textContent=`All charts (${groupRows.length})`;
  $('theme-filter').hidden=!theme;
  $('theme-filter').innerHTML=theme?`${esc(theme.taxonomy)}: ${esc(theme.name)} <button id="clear-theme">Clear ×</button>`:'';
  $('stock-rows').innerHTML=shown.map(r=>{const available=r.momentum_confirmations!=null;return `<tr><td><button class="company-button" data-stock="${esc(r.isin)}">${esc(r.name)}</button><div class="company-sub"><span>${esc(r.symbol)}</span><span class="badge ${r.candidate?'green':r.setup==='Extended / event'?'amber':''}">${esc(r.candidate?r.setup:r.leader?'Established leader':r.setup)}</span>${r.tracking?.first_seen===D.asof?'<span class="positive">NEW</span>':''}${pref(r.isin).review==='reviewed'?'<span>✓ reviewed</span>':''}</div></td><td><strong>${esc(r.stage||'Awaiting refreshed scan')}</strong><span class="metric-sub">${esc(r.rotation_posture||'—')}</span></td><td><strong>${available?r.momentum_confirmations+'/4':'—'}</strong><span class="metric-sub">${available?`VStop ${r.vstop_bullish?'bullish':'bearish'} · OBV ${r.obv_bullish?'bullish':'bearish'}`:'Technical context awaiting refresh'}</span><span class="metric-sub">ADX ${num(r.adx)} · ER ${num(r.efficiency_20,2)}</span></td><td>${esc(r.theme_name||'Industry context unavailable')}<span class="metric-sub">${esc(r.theme_taxonomy||'Current context')} · ${esc(r.theme_state||'—')}${r.theme_rank?' · rank #'+r.theme_rank:''}</span><span class="metric-sub">vs own industry ${pct(r.stock_vs_industry_r20)} · industry rank #${r.industry_rank??'—'}</span></td><td class="${color(r.r20)}">${pct(r.r20)}<span class="metric-sub">60D ${pct(r.r60)} · vs industry ${pct(r.stock_vs_industry_r20)}</span></td><td>${num(r.participation,2)}×<span class="metric-sub">Volume 5D/30D ${num(r.volume_ratio_5d_30d,2)}× · up-volume ${rate(r.up_volume_share_20)}</span><span class="metric-sub">20D turnover/market cap ${rate(r.turnover_mcap_20d_pct)} · ₹${num(r.turnover_cr)}cr/day median</span></td><td><button class="watch-button ${watched(r.isin)?'saved':''}" data-watch="${esc(r.isin)}" aria-label="${watched(r.isin)?'Remove':'Add'} ${esc(r.symbol)} ${watched(r.isin)?'from':'to'} watchlist" aria-pressed="${watched(r.isin)}">${watched(r.isin)?'★':'☆'}</button></td></tr>`;}).join('');
  $('empty').hidden=shown.length>0;
- $('empty').innerHTML=D.status!=='ready'?'<strong>Waiting for the first market scan.</strong><p>The workspace is ready. Stocks appear here only after a successful scan of completed sessions. No sample names are shown as live signals.</p>':view==='watchlist'?'<strong>No matching saved stocks.</strong><p>Use the star beside a company to keep it here. If a saved stock becomes ineligible or unavailable, it appears below with a warning.</p>':'<strong>No setups meet these conditions.</strong><p>That is a valid result. Try another view or clear your filters; the scanner does not relax its rules to fill a list.</p>';
+	 $('empty').innerHTML=D.status!=='ready'?'<strong>Waiting for the first market scan.</strong><p>The workspace is ready. Stocks appear here only after a successful scan of completed sessions. No sample names are shown as live signals.</p>':view==='watchlist'?'<strong>No matching saved stocks.</strong><p>Use the star beside a company to keep it here. If a saved stock becomes ineligible or unavailable, it appears below with a warning.</p>':view==='custom'?'<strong>No uploaded symbols are currently eligible.</strong><p>Upload the supplied comma-separated symbol list. Symbols outside today\'s eligible universe remain visible below with the exclusion reason.</p>':'<strong>No setups meet these conditions.</strong><p>That is a valid result. Try another view or clear your filters; the scanner does not relax its rules to fill a list.</p>';
  $('show-all').hidden=shown.length>=rows.length;
- if(view==='watchlist'){
-   const missing=Object.keys(workspace).filter(id=>watched(id)&&!stockById(id));
-   if(missing.length){$('empty').hidden=false;$('empty').innerHTML=(shown.length?'<strong>Saved stocks outside today’s eligible universe</strong>':$('empty').innerHTML)+missing.map(id=>`<div>${esc(pref(id).symbol||id)} — ${esc(D.excluded?.find(x=>x.isin===id)?.reason||'current data unavailable')} <button class="text-button" data-watch="${esc(id)}">Remove</button></div>`).join('');}
- }
+	 if(view==='watchlist'){
+	   const missing=Object.keys(workspace).filter(id=>watched(id)&&!stockById(id));
+	   if(missing.length){$('empty').hidden=false;$('empty').innerHTML=(shown.length?'<strong>Saved stocks outside today’s eligible universe</strong>':$('empty').innerHTML)+missing.map(id=>`<div>${esc(pref(id).symbol||id)} — ${esc(D.excluded?.find(x=>x.isin===id)?.reason||'current data unavailable')} <button class="text-button" data-watch="${esc(id)}">Remove</button></div>`).join('');}
+	 }
+	 if(view==='custom'){
+	   const available=new Set(D.rows.map(r=>String(r.symbol).toUpperCase())),missing=customSymbols.filter(s=>!available.has(s));
+	   if(missing.length){$('empty').hidden=false;$('empty').innerHTML=(shown.length?'<strong>Uploaded symbols outside today’s eligible universe</strong>':$('empty').innerHTML)+missing.map(s=>{const x=D.excluded?.find(e=>String(e.symbol).toUpperCase()===s);return `<div>${esc(s)} — ${esc(x?.reason||'not found in the configured NSE registry')}</div>`;}).join('');}
+	 }
 }
 
 function renderEvidence(){renderHistorical();const rows=D.summary||[];
@@ -68,18 +84,20 @@ function renderEvidence(){renderHistorical();const rows=D.summary||[];
 
 function render(){const t=titles[view];$('page-kicker').textContent=t[0];$('page-title').textContent=t[1];$('page-subtitle').textContent=t[2];
  document.querySelectorAll('.nav').forEach(b=>{b.classList.toggle('active',b.dataset.view===view);if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
- $('workspace-tools').hidden=view!=='watchlist';
- $('watch-count').textContent=Object.values(workspace).filter(p=>p.watch).length;
+	 $('workspace-tools').hidden=view!=='watchlist';$('custom-tools').hidden=view!=='custom';
+	 $('watch-count').textContent=Object.values(workspace).filter(p=>p.watch).length;
+	 $('custom-count').textContent=customSymbols.length;
  const ready=D.status==='ready',candidates=D.rows.filter(r=>r.candidate),themes=D.themes.filter(t=>t.taxonomy==='Curated theme'&&['Leading','Emerging'].includes(t.status));
  $('stats').innerHTML=[['Confirmed moves',ready?candidates.filter(r=>r.setup==='Confirmed moves').length:'—','Price crossed and held'],['Current support ≥3/4',ready?candidates.filter(r=>r.momentum_confirmations>=3).length:'—','Descriptive checks—not a win score'],['Leading / emerging themes',ready?themes.length:'—','Sector context, not a prediction'],['Market regime',D.market?.regime||'—',ready?`${esc(D.market?.benchmark||'Nifty 500')} 20D ${pct(D.market?.r20)} · breadth ${num(D.market?.breadth,0)}%`:'Market context appears after the scan']].map((x,i)=>`<div class="stat"><div class="stat-label">${x[0]}</div><div class="stat-value ${i===3?color(D.market?.r20):''}">${x[1]}</div><div class="stat-foot">${x[2]}</div></div>`).join('');
  $('theme-preview').hidden=view!=='overview'||!ready;
  const featured=D.themes.filter(t=>t.taxonomy==='Curated theme'&&['Leading','Emerging'].includes(t.status)).slice(0,3);
  $('theme-cards').innerHTML=featured.length?featured.map(themeCard).join(''):'<p class="section-note">No sufficiently covered theme currently meets the improving or leading conditions.</p>';
- $('stock-section').hidden=!['overview','candidates','watchlist'].includes(view);
- $('themes-section').hidden=view!=='themes';$('evidence-section').hidden=view!=='evidence';
+	 $('stock-section').hidden=bulkScope||!['overview','candidates','watchlist','custom'].includes(view);
+	 $('bulk-chart-section').hidden=!bulkScope;
+	 $('themes-section').hidden=view!=='themes'||bulkScope;$('evidence-section').hidden=view!=='evidence'||bulkScope;
  $('rotation-board').innerHTML=`<div><span class="eyebrow">LEADERS / EMERGING</span><strong>${(D.rotation?.leaders||[]).map(esc).join(' · ')||'No qualifying theme'}</strong></div><div><span class="eyebrow">REVIEW / ROTATE</span><strong>${(D.rotation?.review||[]).map(esc).join(' · ')||'No weakening theme'}</strong></div>`;
  $('theme-grid').innerHTML=D.themes.filter(t=>t.taxonomy===$('taxonomy').value).map(themeCard).join('')||'<div class="empty">Theme measurements arrive with the first successful scan.</div>';
- renderStocks();renderEvidence();renderQuality();
+	 renderStocks();if(bulkScope)renderBulkCharts();renderEvidence();renderQuality();
 }
 
 function renderQuality(){const c=D.coverage;
@@ -106,12 +124,22 @@ function chartMarkup(b,row){if(!b?.dates?.length)return '<div class="empty">Char
  let overlays='';if(b.vstop)for(let i=1;i<n;i++)if(b.vstop[i-1]!=null&&b.vstop[i]!=null)overlays+=`<line class="vstop ${b.c[i]>=b.vstop[i]?'up':'down'}" x1="${x(i-1)}" y1="${y(b.vstop[i-1])}" x2="${x(i)}" y2="${y(b.vstop[i])}"/>`;
  if(row.anchor_adjusted)overlays+=`<line class="anchor" x1="${L}" x2="${right}" y1="${y(row.anchor_adjusted)}" y2="${y(row.anchor_adjusted)}"/><text class="anchor-label" x="${L+5}" y="${y(row.anchor_adjusted)-5}">Breakout reference</text>`;
  const seen=b.dates.indexOf(row.tracking?.first_seen);if(seen>=0)overlays+=`<line class="seen" x1="${x(seen)}" x2="${x(seen)}" y1="${PT}" y2="${VB}"/><text class="seen-label" x="${Math.max(L,Math.min(x(seen)-50,right-100))}" y="15">First detected</text>`;
- const avgY=vy(vavg);return `<div class="chart-legend">${chartLegend(b,n-1)}</div><svg class="interactive-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Interactive adjusted candlestick and volume chart for ${esc(row.symbol)}"><rect class="chart-bg" width="${W}" height="${H}"/><g class="chart-grid">${grid}</g>${candles}${volumes}${overlays}<line class="volume-average" x1="${L}" x2="${right}" y1="${avgY}" y2="${avgY}"/><text class="volume-average-label" x="${right+7}" y="${avgY+4}">${volText(vavg)} avg</text><g class="chart-axis">${axis}${dates}<text x="${right+7}" y="${VT+12}">${volText(vmax)}</text></g><g class="chart-cross" hidden><line class="cross-x" y1="${PT}" y2="${VB}"/><line class="cross-y" x1="${L}" x2="${right}"/><rect class="cross-price" width="62" height="18" rx="2"/><text class="cross-price-text" text-anchor="middle"></text><rect class="cross-date" width="78" height="18" rx="2"/><text class="cross-date-text" text-anchor="middle"></text></g></svg><p class="chart-caption">100 completed sessions · adjusted prices · VStop 10×2 · volume and 100-session average · move or drag across the chart for OHLCV</p>`;
+	 const avgY=vy(vavg);return `<div class="chart-legend">${chartLegend(b,n-1)}</div><svg class="interactive-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Interactive adjusted candlestick and volume chart for ${esc(row.symbol)}"><rect class="chart-bg" width="${W}" height="${H}"/><g class="chart-grid">${grid}</g>${candles}${volumes}${overlays}<line class="volume-average" x1="${L}" x2="${right}" y1="${avgY}" y2="${avgY}"/><text class="volume-average-label" x="${right+7}" y="${avgY+4}">${volText(vavg)} avg</text><g class="chart-axis">${axis}${dates}<text x="${right+7}" y="${VT+12}">${volText(vmax)}</text></g><g class="chart-cross" hidden><line class="cross-x" y1="${PT}" y2="${VB}"/><line class="cross-y" x1="${L}" x2="${right}"/><rect class="cross-price" width="62" height="18" rx="2"/><text class="cross-price-text" text-anchor="middle"></text><rect class="cross-date" width="78" height="18" rx="2"/><text class="cross-date-text" text-anchor="middle"></text></g></svg><p class="chart-caption">${esc(b.dates[0])} to ${esc(b.dates[n-1])} · adjusted prices · VStop 10×2 · traded volume and period average · move or drag for OHLCV</p>`;
 }
 function wireChart(root,b,row){const svg=root.querySelector('.interactive-chart'),legend=root.querySelector('.chart-legend');if(!svg||!b?.dates?.length)return;const {W,L,R,PT,PB,VB,DT}=CH,right=W-R,n=b.dates.length,step=(right-L)/n,g=svg.querySelector('.chart-cross'),cx=g.querySelector('.cross-x'),cy=g.querySelector('.cross-y'),priceBox=g.querySelector('.cross-price'),priceText=g.querySelector('.cross-price-text'),dateBox=g.querySelector('.cross-date'),dateText=g.querySelector('.cross-date-text'),anchor=Number(row?.anchor_adjusted);let hi=Math.max(...b.h,Number.isFinite(anchor)?anchor:-Infinity),lo=Math.min(...b.l,Number.isFinite(anchor)?anchor:Infinity),pad=(hi-lo)*.08||1;hi+=pad;lo-=pad;
  const move=(clientX,clientY)=>{const box=svg.getBoundingClientRect(),scale=W/(box.width||W),xx=(clientX-box.left)*scale,yy=(clientY-box.top)*scale,i=Math.max(0,Math.min(n-1,Math.floor((xx-L)/step))),barX=L+step*i+step/2,crossY=Math.max(PT,Math.min(VB,yy));g.hidden=false;cx.setAttribute('x1',barX);cx.setAttribute('x2',barX);cy.setAttribute('y1',crossY);cy.setAttribute('y2',crossY);const inPrice=yy>=PT&&yy<=PB;priceBox.hidden=priceText.hidden=!inPrice;if(inPrice){const price=lo+(PB-crossY)/(PB-PT)*(hi-lo);priceBox.setAttribute('x',right+2);priceBox.setAttribute('y',crossY-9);priceText.setAttribute('x',right+33);priceText.setAttribute('y',crossY+4);priceText.textContent=num(price,2);}dateBox.setAttribute('x',barX-39);dateBox.setAttribute('y',DT-15);dateText.setAttribute('x',barX);dateText.setAttribute('y',DT-2);dateText.textContent=b.dates[i];legend.innerHTML=chartLegend(b,i);};
- svg.addEventListener('mousemove',e=>move(e.clientX,e.clientY));svg.addEventListener('mouseleave',()=>{g.hidden=true;legend.innerHTML=chartLegend(b,n-1);});svg.addEventListener('touchmove',e=>{if(e.touches.length){e.preventDefault();move(e.touches[0].clientX,e.touches[0].clientY);}},{passive:false});
+	 svg.addEventListener('mousemove',e=>move(e.clientX,e.clientY));svg.addEventListener('mouseleave',()=>{g.hidden=true;legend.innerHTML=chartLegend(b,n-1);});svg.addEventListener('touchmove',e=>{if(e.touches.length){e.preventDefault();move(e.touches[0].clientX,e.touches[0].clientY);}},{passive:false});
 }
+
+async function ensureCharts(){if(charts)return charts;const response=await fetch(DATA_ROOT+'charts.json',{cache:'no-store'});if(!response.ok)throw Error('Chart feed unavailable');charts=await response.json();if(charts.asof!==D.asof)throw Error('Chart and scan sessions differ. Reload the snapshot.');return charts;}
+function bulkRows(){const ids=new Set(bulkScope?.ids||[]);return (bulkScope?.ordered||false)?bulkScope.ids.map(id=>stockById(id)).filter(Boolean):D.rows.filter(r=>ids.has(r.isin));}
+function renderBulkCharts(){if(!bulkScope)return;const rows=bulkRows(),shown=rows.slice(0,bulkShown);$('bulk-chart-title').textContent=bulkScope.title;$('bulk-chart-note').textContent=`Daily charts from 1 January ${String(D.asof||'').slice(0,4)}. Same published technical analysis; this view only changes how many stocks you can inspect together.`;$('bulk-chart-count').textContent=`${shown.length} of ${rows.length} charts`;
+	 if(!charts){$('bulk-chart-grid').innerHTML='<div class="empty"><strong>Loading chart set…</strong><p>The first load may take a moment.</p></div>';$('more-charts').hidden=true;return;}
+	 $('bulk-chart-grid').innerHTML=shown.map(r=>{const b=charts.charts[r.isin];return `<article class="bulk-chart-card" data-chart-id="${esc(r.isin)}"><div class="bulk-chart-head"><div><button class="company-button" data-stock="${esc(r.isin)}">${esc(r.symbol)} · ${esc(r.name)}</button><span>${esc(r.stage)} · ${r.momentum_confirmations??'—'}/4 support · 20D ${pct(r.r20)}</span></div><span class="badge ${r.vstop_bullish?'green':'amber'}">VStop ${r.vstop_bullish?'bullish':'bearish'}</span></div><div class="chart">${chartMarkup(b,r)}</div></article>`;}).join('')||'<div class="empty"><strong>No chart-ready stocks</strong><p>This group has no members in today’s eligible snapshot.</p></div>';
+	 for(const card of document.querySelectorAll('[data-chart-id]')){const r=stockById(card.dataset.chartId),b=charts.charts[card.dataset.chartId];if(r&&b)wireChart(card.querySelector('.chart'),b,r);}
+	 $('more-charts').hidden=shown.length>=rows.length;
+}
+async function openBulkCharts(){const rows=currentGroupRows();if(!rows.length){toast('No eligible stocks are available for this chart set.');return;}bulkScope={ids:rows.map(r=>r.isin),ordered:view==='custom',title:theme?`${theme.name} · all charts`:view==='custom'?'Custom watchlist · all charts':'Watchlist · all charts'};bulkShown=12;render();try{await ensureCharts();if(bulkScope)render();}catch(e){$('bulk-chart-grid').innerHTML=`<div class="empty"><strong>Charts unavailable</strong><p>${esc(e.message)}</p></div>`;}}
 
 async function openStock(id){const r=stockById(id);if(!r){toast('This stock is outside the current eligible snapshot.');return;}detail=id;
  $('detail-sector').textContent=r.sector;$('detail-name').textContent=r.name;$('detail-label').textContent=`${r.symbol} · ${r.isin} · ${r.setup} · ${r.asof}`;
@@ -122,7 +150,7 @@ async function openStock(id){const r=stockById(id);if(!r){toast('This stock is o
  $('detail-watch').onclick=()=>{setPref(id,{watch:!watched(id),symbol:r.symbol});$('detail-watch').textContent=watched(id)?'★ Saved to watchlist':'☆ Add to watchlist';render();};
  $('stock-note').oninput=e=>setPref(id,{note:e.target.value,symbol:r.symbol});
  document.querySelectorAll('[data-review]').forEach(b=>b.onclick=()=>{setPref(id,{review:b.dataset.review,symbol:r.symbol});document.querySelectorAll('[data-review]').forEach(x=>x.classList.toggle('selected',x.dataset.review===b.dataset.review));render();toast('Review status saved.');});
- try{if(!charts){const response=await fetch(DATA_ROOT+'charts.json',{cache:'no-store'});if(!response.ok)throw Error('Chart feed unavailable');charts=await response.json();}if(detail!==id)return;if(charts.asof!==D.asof)throw Error('Chart and scan sessions differ. Reload the snapshot.');const b=charts.charts[id];$('detail-chart').innerHTML=chartMarkup(b,r);wireChart($('detail-chart'),b,r);}catch(e){if(detail===id)$('detail-chart').textContent=e.message;}
+	 try{await ensureCharts();if(detail!==id)return;const b=charts.charts[id];$('detail-chart').innerHTML=chartMarkup(b,r);wireChart($('detail-chart'),b,r);}catch(e){if(detail===id)$('detail-chart').textContent=e.message;}
 }
 
 function syncResearch(){historical=researchCandidate?.model===MODEL&&D.model===MODEL?researchCandidate:null;}
@@ -131,14 +159,18 @@ async function load(){try{const [snapshot,status]=await Promise.all([fetch(DATA_
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>changeView(b.dataset.view));
 for(const id of ['search','setup','stage','sort','review-filter'])$(id).addEventListener('input',()=>{all=false;renderStocks();});
 $('taxonomy').onchange=render;$('all-themes').onclick=()=>changeView('themes');$('reload').onclick=()=>{load();toast('Reloading the published market snapshot…');};$('show-all').onclick=()=>{all=true;renderStocks();};
+$('all-charts').onclick=openBulkCharts;$('charts-back').onclick=()=>{bulkScope=null;render();};$('more-charts').onclick=()=>{bulkShown+=12;renderBulkCharts();};
 document.addEventListener('click',e=>{const s=e.target.closest('[data-stock]'),w=e.target.closest('[data-watch]'),t=e.target.closest('[data-theme]');if(s)openStock(s.dataset.stock);else if(w){const id=w.dataset.watch;setPref(id,{watch:!watched(id),symbol:stockById(id)?.symbol||pref(id).symbol});render();}else if(t){theme=D.themes.find(x=>x.taxonomy+'|'+x.name===t.dataset.theme);view='candidates';$('setup').value='all';$('search').value='';render();}else if(e.target.id==='clear-theme'){theme=null;render();}});
 for(const id of ['method-open','quality-open'])$(id).onclick=()=>$('method-dialog').showModal();
 document.querySelectorAll('.close-dialog').forEach(b=>b.onclick=()=>b.closest('dialog').close());
 for(const d of document.querySelectorAll('dialog'))d.addEventListener('click',e=>{if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close();}});
 $('stock-dialog').addEventListener('close',()=>detail=null);
-$('export').onclick=()=>{const blob=new Blob([JSON.stringify({version:1,exported:new Date().toISOString(),workspace},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='stocks-workspace.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+$('export').onclick=()=>{const blob=new Blob([JSON.stringify({version:1,exported:new Date().toISOString(),workspace,custom_symbols:customSymbols},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='stocks-workspace.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('export-mobile').onclick=()=>$('export').click();
-$('import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>2000000)throw Error('File is too large');const j=JSON.parse(await file.text());if(j.version!==1||!j.workspace||typeof j.workspace!=='object'||Array.isArray(j.workspace))throw Error('Not a Stocks workspace export');const safe={};for(const [id,p] of Object.entries(j.workspace)){if(!/^[A-Z0-9]{12}$/.test(id)||!p||typeof p!=='object')continue;safe[id]={watch:p.watch===true,review:['reviewed','dismissed','unreviewed'].includes(p.review)?p.review:'unreviewed',note:String(p.note||'').slice(0,10000),symbol:String(p.symbol||'').slice(0,50)};}workspace={...workspace,...safe};save();render();toast('Workspace imported.');}catch(err){toast('Import failed: '+err.message);}e.target.value='';};
+$('import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>2000000)throw Error('File is too large');const j=JSON.parse(await file.text());if(j.version!==1||!j.workspace||typeof j.workspace!=='object'||Array.isArray(j.workspace))throw Error('Not a Stocks workspace export');const safe={};for(const [id,p] of Object.entries(j.workspace)){if(!/^[A-Z0-9]{12}$/.test(id)||!p||typeof p!=='object')continue;safe[id]={watch:p.watch===true,review:['reviewed','dismissed','unreviewed'].includes(p.review)?p.review:'unreviewed',note:String(p.note||'').slice(0,10000),symbol:String(p.symbol||'').slice(0,50)};}workspace={...workspace,...safe};save();if(Array.isArray(j.custom_symbols)){customSymbols=normalizeSymbols(j.custom_symbols.join(','));saveCustom();}render();toast('Workspace imported.');}catch(err){toast('Import failed: '+err.message);}e.target.value='';};
+function normalizeSymbols(text){const ignored=new Set(['SYMBOL','SYMBOLS','TICKER','TICKERS','NSE','BSE']);const seen=new Set(),out=[];for(let token of String(text).split(/[\s,;\t|]+/)){token=token.trim().replace(/^['"]|['"]$/g,'').toUpperCase().replace(/^(NSE|BSE):/,'').replace(/\.NS$/,'');if(!token||ignored.has(token)||!/^[A-Z0-9&-]{1,30}$/.test(token)||seen.has(token))continue;seen.add(token);out.push(token);}return out;}
+$('custom-import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>1000000)throw Error('File is too large');const parsed=normalizeSymbols(await file.text());if(!parsed.length)throw Error('No NSE/BSE symbols were found');customSymbols=parsed;saveCustom();bulkScope=null;render();const matched=currentGroupRows().length;toast(`${parsed.length} symbols loaded · ${matched} eligible for current analysis`);}catch(err){toast('Symbol import failed: '+err.message);}e.target.value='';};
+$('custom-clear').onclick=()=>{if(!customSymbols.length||confirm('Clear the uploaded custom watchlist from this browser?')){customSymbols=[];saveCustom();bulkScope=null;render();toast('Custom watchlist cleared.');}};
 render();load();loadResearch();
 
 async function loadResearch(){try{const r=await fetch(DATA_ROOT+'backtest/report.json',{cache:'no-store'});if(!r.ok)return;const result=await r.json();if(result.schema===1&&result.status==='complete'&&result.benchmark?.ticker==='^CRSLDX'){researchCandidate=result;syncResearch();renderHistorical();}}catch{/* Keep the explicit awaiting-result state. */}}

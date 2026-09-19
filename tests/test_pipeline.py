@@ -203,6 +203,10 @@ class PublicationAndTrackingTests(unittest.TestCase):
         payload,charts,ledger=build([META],self.frames,self.asof,CFG,[],[])
         json.dumps([payload,charts,ledger],allow_nan=False)
         self.assertEqual(payload['coverage']['eligible'],1)
+        dates=charts['charts'][META['isin']]['dates']
+        self.assertGreaterEqual(dates[0],f'{self.asof[:4]}-01-01')
+        self.assertEqual(dates[-1],self.asof)
+        self.assertGreater(len(dates),100)
 
     def test_weekend_and_intraday_use_completed_session(self):
         self.assertEqual(expected_session('2026-09-19T12:00:00Z'),'2026-09-18')

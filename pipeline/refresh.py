@@ -317,8 +317,12 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     chart_ids={r['isin']:r['yahoo'] for r in rows}
     charts={}
     for isin,ticker in chart_ids.items():
-        d=frames[ticker].tail(100)
-        stop,_,_=vstop_series(d,cfg.get('vstop_length',10),cfg.get('vstop_factor',2))
+        full=frames[ticker]
+        full_stop,_,_=vstop_series(full,cfg.get('vstop_length',10),cfg.get('vstop_factor',2))
+        start=pd.Timestamp(f'{asof[:4]}-01-01')
+        mask=full.index>=start
+        d=full.loc[mask]
+        stop=full_stop[mask]
         charts[isin]={'dates':[str(x.date()) for x in d.index],
                       **{k[0].lower():[round(float(x),3) for x in d[k]] for k in ['Open','High','Low','Close','Volume']},
                       'vstop':[round(float(x),3) if np.isfinite(x) else None for x in stop]}

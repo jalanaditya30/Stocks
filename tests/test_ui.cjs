@@ -9,7 +9,8 @@ async function boot(data=snapshot,chartDate=data.asof,research=null){
  const dom=new JSDOM(html,{url:'https://example.test/Stocks/',runScripts:'outside-only'}),w=dom.window;
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true};
  w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'))};
- w.fetch=async url=>({ok:true,json:async()=>url.includes('backtest')?research:url.includes('latest')?data:url.includes('health')?{status:'ok'}:{asof:chartDate,charts:{[base.isin]:{dates:['2026-09-18'],o:[112],h:[115],l:[110],c:[114],v:[1000]}}}});
+ const chart={dates:['2026-01-02','2026-09-18'],o:[100,112],h:[103,115],l:[99,110],c:[102,114],v:[900,1000],vstop:[98,108]};
+ w.fetch=async url=>({ok:true,json:async()=>url.includes('backtest')?research:url.includes('latest')?data:url.includes('health')?{status:'ok'}:{asof:chartDate,charts:{[base.isin]:chart,INE000000002:{...chart,c:[101,113]}}}});
  w.eval(code);await new Promise(r=>setImmediate(r));return {dom,w,d:w.document};
 }
 (async()=>{
@@ -25,14 +26,22 @@ async function boot(data=snapshot,chartDate=data.asof,research=null){
  const svg=d.querySelector('#detail-chart svg'),cross=d.querySelector('.chart-cross');
  svg.getBoundingClientRect=()=>({left:0,top:0,width:900,height:370});
  svg.dispatchEvent(new w.MouseEvent('mousemove',{clientX:100,clientY:100}));
- assert.equal(cross.hidden,false);assert.match(d.querySelector('.chart-legend').textContent,/O 112.00/);
+ assert.equal(cross.hidden,false);assert.match(d.querySelector('.chart-legend').textContent,/O 100.00/);
  svg.dispatchEvent(new w.MouseEvent('mouseleave'));assert.equal(cross.hidden,true);
  let note=d.querySelector('#stock-note');note.value='Check earnings';note.dispatchEvent(new w.Event('input'));
  assert.equal(JSON.parse(w.localStorage.getItem('stocks-workspace-v1'))[base.isin].note,'Check earnings');
  d.querySelector('[data-review="dismissed"]').click();assert.equal(d.querySelectorAll('#stock-rows tr').length,0);
  d.querySelector('[data-review="unreviewed"]').click();d.querySelector('#stock-dialog').close();
  d.querySelector('[data-view="watchlist"]').click();assert.equal(d.querySelectorAll('#stock-rows tr').length,1);
+ assert.equal(d.querySelector('#all-charts').hidden,false);d.querySelector('#all-charts').click();await new Promise(r=>setImmediate(r));
+ assert.equal(d.querySelectorAll('.bulk-chart-card').length,1);assert.match(d.querySelector('#bulk-chart-note').textContent,/1 January 2026/);assert.match(d.querySelector('.chart-caption').textContent,/2026-01-02 to 2026-09-18/);
+ d.querySelector('#charts-back').click();
+ d.querySelector('[data-view="custom"]').click();
+ const upload=d.querySelector('#custom-import'),file={name:'Blue list.txt',size:50,text:async()=> 'NSE:OTHER,NSE:TEST,BSE:UNKNOWN'};Object.defineProperty(upload,'files',{value:[file],configurable:true});upload.dispatchEvent(new w.Event('change'));await new Promise(r=>setImmediate(r));
+ assert.equal(d.querySelectorAll('#stock-rows tr').length,2);assert.match(d.querySelector('#empty').textContent,/UNKNOWN/);assert.equal(JSON.parse(w.localStorage.getItem('stocks-custom-watchlist-v1')).length,3);
+ d.querySelector('#all-charts').click();await new Promise(r=>setImmediate(r));assert.equal(d.querySelectorAll('.bulk-chart-card').length,2);assert.match(d.querySelector('.bulk-chart-card .company-button').textContent,/OTHER/);d.querySelector('#charts-back').click();
  d.querySelector('[data-view="themes"]').click();d.querySelector('#theme-grid [data-theme]').click();assert.equal(d.querySelectorAll('#stock-rows tr').length,1);
+ assert.equal(d.querySelector('#all-charts').hidden,false);
  assert.match(d.querySelector('#rotation-board').textContent,/Test theme/);
  d.querySelector('#clear-theme').click();assert.equal(d.querySelectorAll('#stock-rows tr').length,2);
  let search=d.querySelector('#search');search.value='OTHER';search.dispatchEvent(new w.Event('input'));assert.equal(d.querySelectorAll('#stock-rows tr').length,1);assert.match(d.querySelector('#stock-rows').textContent,/Other Test/);
@@ -52,5 +61,5 @@ async function boot(data=snapshot,chartDate=data.asof,research=null){
  assert.doesNotMatch(d.body.textContent,/\bpp\b|percentage points|Midcap 150/);
  assert.equal(d.querySelector('#historical-research').parentElement.tagName,'DETAILS');
  dom.window.close();
- console.log('UI integration passed: confirmed defaults, watchlist, notes, review, theme filter, search, pending state and mismatched charts.');
+ console.log('UI integration passed: confirmed defaults, saved/custom watchlists, multi-chart grids, notes, review, theme filter, search, pending state and mismatched charts.');
 })().catch(e=>{console.error(e);process.exitCode=1});
