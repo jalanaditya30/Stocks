@@ -79,3 +79,18 @@ This release implements the daily workspace, transparent confirmation hypotheses
 An ongoing setup is recorded once per stock, setup type and model. A later crossing is a new observation only after an intervening close below the previous breakout reference. Completed forward observations are stored permanently; a later provider outage or rolling history limit does not erase them.
 
 If the provider has incomplete bars, the app may show the most recent common complete exchange session within three exchange sessions, still requiring 85% registry coverage, with a prominent delayed-data warning. A lagged snapshot never records new live detections and cannot overwrite a newer snapshot. A delay longer than three exchange sessions is rejected. No missing benchmark close is fabricated.
+
+
+## September 2026 completion audit: opportunity separate from exits
+
+The Evidence view now leads with historical best-high / worst-low observations and prospective +5% / +10% reach rates. Historical portfolio exits remain separately available. Selection rules stay at confirmed-v1; this change does not retune rankings against the supplied charts.
+
+For every complete forward horizon, the live tracker records best adjusted high relative to next-session open, worst adjusted low, and first session reaching +5% and +10% (entry session is session 1). It also records whether each target or −5% was observed first. Both on the same daily bar are explicitly ambiguous: daily OHLC cannot recover their order. These opportunity statistics are gross and are not executable profits. Hit-rate denominators use complete horizons; recorded totals and unresolved observations remain visible. Median time to target is conditional on reaching it.
+
+Completed metrics persist during outages. Old completed returns are retained when new opportunity fields are added. A missing original detection session cannot be silently replaced by the earliest remaining provider bar. Stale last prices cannot imply that a setup is holding today. No future bar is used past the requested evaluation date. Delayed downloads receive a retry while retaining the best fallback.
+
+### TradingView screenshots
+
+Seven daily charts supplied on 19 September show VStop (10, close, 2), Parabolic SAR (0.02, 0.02, 0.2), RSI (14, close), and a custom OBV MACD labelled `1 DEMA 9 26 2 50`. These are manual review inputs, not the confirmed-v1 scanner formulas. Exact custom indicator parity requires its Pine source, including smoothing, initialization and signal-color logic; screenshots do not establish those formulas. No claim of parity is made.
+
+Use the charts to distinguish an intact advance, a stretched move and lost trend support. A chart that rose strongly before the screenshot is not evidence that a later scanner suggestion has upside. Evaluation must begin after a recorded suggestion. Pre-breakout setups remain excluded.
