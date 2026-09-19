@@ -1,1 +1,1 @@
-{"status":"error","checked_at":"2026-09-19T15:57:35.016670+00:00","message":"Refusing to replace a newer snapshot","note":"Previous successful snapshot retained."}
+{"status":"delayed","asof":"2026-09-16","expected_session":"2026-09-18","message":"Provider coverage is incomplete for 2026-09-18. Showing the common completed session 2026-09-16; no new live detections recorded.","checked_at":"2026-09-19T16:10:21.051560+00:00"}
