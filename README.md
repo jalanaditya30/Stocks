@@ -15,6 +15,8 @@ A daily Indian-equity research workspace for **confirmed moves** and **leaders r
 - Browser-local saved and uploaded-symbol watchlists, review/dismiss decisions, notes, and export/import. Uploaded lists analyse configured `NSE:` symbols; BSE-only tokens are retained and disclosed as unsupported rather than misidentified. Lists do not leave the browser.
 - Immutable first daily snapshots, a detection ledger, and prospective 5/10/20/40-session outcomes.
 - A visible refresh-health state. Failed or incomplete refreshes preserve the last successful snapshot.
+- Per-session continuity diagnostics and targeted retries for internal price-history gaps.
+- A transparent strength and fresh-entry review ranking in shadow mode; it does not change qualification.
 
 The initial thresholds are **new research hypotheses**, not validated trading signals. They do not revive the retired R2/R5 strategies. The four support checks describe confirmed moves but do not admit pre-breakout stocks, form a combined score or claim remaining upside. A confirmed price move can fail. See [the full specification](docs/METHODOLOGY.md).
 
@@ -56,7 +58,8 @@ Open `http://localhost:8080`. A limited scan (`python -m pipeline.refresh --limi
 | `config/model.json` | Versioned confirmation parameters |
 | `pipeline/engine.py` | Normalization, confirmation and theme calculations |
 | `pipeline/refresh.py` | Shared fetch, publication, ledger and prospective outcomes |
-| `data/latest.json`, `data/charts.json` | Published market snapshot and matching chart session |
+| `data/current.json`, `data/snapshots/` | Atomic activation manifest and immutable snapshot bundle with bounded chart chunks |
+| `data/latest.json`, `data/charts.json` | Backward-compatible aliases for the latest snapshot |
 | `data/history/<model>/<session>.json` | First successful snapshot for that session and rule version |
 | `data/ledger.json` | First detection records; personal notes are never stored here |
 | `data/health.json` | Latest refresh attempt status |
@@ -67,6 +70,10 @@ Open `http://localhost:8080`. A limited scan (`python -m pipeline.refresh --limi
 The repository and market data are public. Your watchlist and notes are saved only in your browser's local storage. Clearing browser storage removes them; exporting a workspace creates a backup you can import on another device. There is no sign-in or automatic cross-device sync.
 
 ## Maintenance and provenance
+
+Every live snapshot records the code revision, model/ranking/indicator versions, calendar version, configuration hash and universe hash. Historical evidence must match those calculation inputs before the UI treats it as compatible. The versioned exchange calendar uses `pandas_market_calendars` plus reviewed overrides in `config/exchange_calendar_overrides.json`; missing benchmark bars are checked against that independent session list rather than the benchmark's own dates.
+
+See [the frozen shadow-ranking specification](docs/RANKING_SPEC.md). Strength is descriptive across comparable analysed stocks. Fresh-entry priority is limited to current confirmed eligible candidates, and can legitimately contain fewer than ten names or none. N/A inputs are never converted to zero. The existing ordering remains the default while forward evidence accumulates.
 
 The registry is a curated subset of NSE securities, not a maintained full-exchange listing. Update symbols and theme memberships deliberately, preserve ISIN identity, and record the effective date. Market-cap values inherited in the CSV are not used for historical filtering or theme weights.
 

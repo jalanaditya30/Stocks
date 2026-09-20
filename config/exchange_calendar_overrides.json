@@ -1,0 +1,8 @@
+{
+  "version": "nse-pmc-5.4.0-2026-09-20",
+  "source": "pandas_market_calendars NSE schedule reconciled to NSE Capital Market holiday master",
+  "verified_against": "https://www.nseindia.com/api/holiday-master?type=trading",
+  "verified_on": "2026-09-20",
+  "add_sessions": [],
+  "remove_sessions": []
+}

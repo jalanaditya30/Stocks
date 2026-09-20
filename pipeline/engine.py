@@ -170,7 +170,7 @@ def momentum_indicators(d, cfg):
     stop,trend,_=vstop_series(d,cfg.get('vstop_length',10),cfg.get('vstop_factor',2))
     obv_line,obv_state,_=obv_macd_series(d)
     adx,plus_di,minus_di,atr=directional_indicators(d,cfg.get('adx_length',14))
-    change=abs(close[-1]-close[-21]);path=np.sum(np.abs(np.diff(close[-21:])))
+    change=close[-1]-close[-21];path=np.sum(np.abs(np.diff(close[-21:])))
     efficiency=float(change/path) if path else 0
     obv_value=float(obv_line[-1]) if np.isfinite(obv_line[-1]) else 0.0
     adx_value=float(adx[-1]) if np.isfinite(adx[-1]) else 0.0
@@ -232,6 +232,10 @@ def analyze(meta, d, benchmark, asof, cfg, context=False):
         if not context:
             return None, 'recent sessions missing'
         exclusion_reason = exclusion_reason or 'recent sessions missing'
+    comparable_20 = (str(d.index[-1].date()) == asof and
+                     benchmark.index[-21:].isin(d.index).all())
+    comparable_60 = (str(d.index[-1].date()) == asof and
+                     benchmark.index[-61:].isin(d.index).all())
     d = d.loc[d.index.intersection(benchmark.index)]
     if len(d) < 65:
         return None, exclusion_reason or 'insufficient comparable history'
@@ -240,7 +244,8 @@ def analyze(meta, d, benchmark, asof, cfg, context=False):
     cash = d.CashTurnover.to_numpy(float)
     turn = float(np.median(cash[-60:]))
     nonzero = int(np.sum(d.Volume.to_numpy()[-60:] > 0))
-    if turn < cfg['min_turnover_cr'] or nonzero < 55:
+    liquidity_ok = turn >= cfg['min_turnover_cr'] and nonzero >= 55
+    if not liquidity_ok:
         if not context:
             return None, 'below liquidity requirement'
         exclusion_reason = exclusion_reason or 'below liquidity requirement'
@@ -269,6 +274,15 @@ def analyze(meta, d, benchmark, asof, cfg, context=False):
     if anchor is None:
         anchor = crossed_and_held(d,60,cfg)
     extension = float((c[-1]/anchor['level']-1)*100) if anchor else None
+    atr_pct = ind['atr_pct']
+    extension_atr = extension / atr_pct if extension is not None and atr_pct > 0 else None
+    invalidation = min(anchor['level'], ind['vstop']) if anchor else None
+    invalidation_atr = ((c[-1] / invalidation - 1) * 100 / atr_pct
+                        if invalidation and invalidation > 0 and atr_pct > 0 else None)
+    recent_open = d.Open.to_numpy(float)[-5:]
+    previous_close = d.Close.to_numpy(float)[-6:-1]
+    gap_pct = np.abs(recent_open / previous_close - 1) * 100
+    max_gap_atr = float(np.max(gap_pct) / atr_pct) if atr_pct > 0 else None
     # A stock qualifies on its own price trend. Nifty 500 relative returns are
     # retained as market context, but are deliberately not a stock-level gate.
     technical_ok = c[-1]>sma20>sma50 and slope>0 and r5>0 and r20>0
@@ -310,7 +324,13 @@ def analyze(meta, d, benchmark, asof, cfg, context=False):
     row = {'isin':meta['isin'],'symbol':meta['nse'],'yahoo':meta['yahoo'],
            'name':meta['name'],'sector':meta['industry_group'],'asof':asof,
            'price_asof':str(d.index[-1].date()),'analysis_available':True,
+           'return_end':str(d.index[-1].date()),
+           'return_start_20':str(d.index[-21].date()),
+           'return_start_60':str(d.index[-61].date()),
+           'comparison_20_complete':bool(comparable_20),
+           'comparison_60_complete':bool(comparable_60),
            'scanner_eligible':scanner_eligible,'eligibility_reason':exclusion_reason,
+           'liquidity_ok':bool(liquidity_ok),
            'last':round(float(c[-1]/raw_factor),2),'r5':round(r5,2),'r20':round(r20,2),
            'r60':round(r60,2),'rs20':round(rs20,2),'rs60':round(rs60,2),
            'turnover_cr':round(turn,2),'participation':round(participation,2),
@@ -335,12 +355,15 @@ def analyze(meta, d, benchmark, asof, cfg, context=False):
            'anchor_adjusted':anchor['level'] if anchor else None,
            'breakout_date':anchor['breakout_date'] if anchor else None,
            'extension':round(extension,2) if extension is not None else None,
+           'extension_atr':round(extension_atr,3) if extension_atr is not None else None,
+           'invalidation_atr':round(invalidation_atr,3) if invalidation_atr is not None else None,
+           'max_gap_atr_5d':round(max_gap_atr,3) if max_gap_atr is not None else None,
            'reasons':reasons,'risks':risks,'leader':False}
     return row, exclusion_reason
 
 
 def theme_summary(rows, members, name, taxonomy):
-    usable = [r for r in rows if r['isin'] in members]
+    usable = [r for r in rows if r['isin'] in members and r.get('comparison_60_complete') is not False]
     coverage = len(usable)/len(members) if members else 0
     # Large current registries should not become permanently unclassifiable just
     # because some members fail today's liquidity/history checks. Require a
@@ -364,9 +387,12 @@ def theme_summary(rows, members, name, taxonomy):
                   'Emerging' if delta>=5 and rs20>0 and breadth<60 else
                   'Mature' if rs60>0 and breadth>=60 and (delta<0 or rs20<rs60/3) else
                   'Leading' if rs20>0 and rs60>0 and breadth>=60 and vstop_share>=55 else 'Mixed')
+    endpoints={(r.get('return_start_20'),r.get('return_end')) for r in usable}
+    common_20=next(iter(endpoints)) if len(endpoints)==1 else (None,None)
     return {'name':name,'taxonomy':taxonomy,'members':sorted(members),'resolved':len(usable),
             'total':len(members),'coverage':round(coverage*100,1),
             'coverage_quality':'Broad' if coverage>=.7 else 'Partial',
+            'return_start_20':common_20[0],'return_end':common_20[1],
             'minimum_required':minimum_required,'status':status,
             'r5':median('r5'),'r20':median('r20'),'r60':median('r60'),
             'rs20':median('rs20'),'rs60':median('rs60'),
