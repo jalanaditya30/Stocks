@@ -310,7 +310,9 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     for meta in universe:
         row,reason=analyze(meta,frames.get(meta['yahoo']),benchmark,asof,cfg)
         if row: rows.append(row)
-        else: excluded.append({'isin':meta['isin'],'symbol':meta['nse'],'reason':reason})
+        else: excluded.append({'isin':meta['isin'],'symbol':meta['nse'],'name':meta['name'],
+                               'sector':meta['industry_group'],'industry':meta.get('industry'),
+                               'yahoo':meta['yahoo'],'reason':reason})
     leaders=sorted([r for r in rows if r['momentum_12_1'] is not None],key=lambda r:-r['momentum_12_1'])
     for r in leaders[:max(1,int(np.ceil(len(leaders)*.1)))]:r['leader']=True
     groups=defaultdict(set)
@@ -326,7 +328,10 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     for row in rows:
         signals=[s for s in tracking if s['isin']==row['isin'] and s['model']==cfg['version']]
         row['tracking']=signals[-1] if signals else None
-    chart_ids={r['isin']:r['yahoo'] for r in rows}
+    # Theme drill-downs are membership views, not recommendation-only views.
+    # Retain a chart for every registered member with usable current-year data,
+    # even when it fails the scanner's history/liquidity eligibility rules.
+    chart_ids={r['isin']:r['yahoo'] for r in universe if r['yahoo'] in frames}
     charts={}
     for isin,ticker in chart_ids.items():
         full=frames[ticker]
@@ -334,6 +339,8 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
         start=pd.Timestamp(f'{asof[:4]}-01-01')
         mask=full.index>=start
         d=full.loc[mask]
+        if d.empty:
+            continue
         stop=full_stop[mask]
         charts[isin]={'dates':[str(x.date()) for x in d.index],
                       **{k[0].lower():[round(float(x),3) for x in d[k]] for k in ['Open','High','Low','Close','Volume']},

@@ -106,6 +106,7 @@ li,.detail-links{font-size:14px}
 .detail-metric>span{display:block;color:var(--muted);font-size:11px;margin-top:3px}
 #stock-rows td:nth-child(2),#stock-rows td:nth-child(3),#stock-rows td:nth-child(4){text-align:left}
 #stock-rows strong{font-weight:700}
+.company-name{display:block;font-size:13px;max-width:270px;overflow:hidden;text-overflow:ellipsis}.unavailable-row td{background:#fbfaf7;color:#667680}.unavailable-row:hover td{background:#faf7ef}
 @media(max-width:800px){
  .rotation-board{grid-template-columns:1fr}
  .posture{align-items:flex-start;flex-direction:column;gap:4px}

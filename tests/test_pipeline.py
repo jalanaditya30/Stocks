@@ -210,6 +210,16 @@ class PublicationAndTrackingTests(unittest.TestCase):
         self.assertEqual(dates[-1],self.asof)
         self.assertGreater(len(dates),100)
 
+    def test_excluded_theme_member_keeps_identity_and_available_chart(self):
+        thin={**META,'isin':'INE000000099','name':'Thin Test Company','nse':'THIN',
+              'yahoo':'THIN.NS','industry_group':'Test industry'}
+        frames={**self.frames,'THIN.NS':self.frames['TEST.NS'].iloc[-40:].copy()}
+        payload,charts,_=build([META,thin],frames,self.asof,CFG,[],[])
+        item=next(x for x in payload['excluded'] if x['isin']==thin['isin'])
+        self.assertEqual(item['name'],'Thin Test Company')
+        self.assertEqual(item['sector'],'Test industry')
+        self.assertIn(thin['isin'],charts['charts'])
+
     def test_weekend_and_intraday_use_completed_session(self):
         self.assertEqual(expected_session('2026-09-19T12:00:00Z'),'2026-09-18')
         self.assertEqual(expected_session('2026-09-18T09:00:00Z'),'2026-09-17')
