@@ -19,6 +19,7 @@ import yfinance as yf
 from pipeline.engine import normalized, analyze, theme_summary, vstop_series, pct
 from pipeline.calendar import calendar_metadata, exchange_sessions, recent_sessions
 from pipeline.ranking import SCORE_VERSION, score_rows
+from pipeline.nse_bhavcopy import repair_concentrated_gaps
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT/'data'
@@ -140,10 +141,12 @@ def provenance(cfg):
     return {'code_revision':os.getenv('GITHUB_SHA') or 'working-tree',
             'model_version':cfg['version'],'ranking_version':SCORE_VERSION,
             'indicator_version':'technical-indicators-v1',
+            'data_source_version':'yahoo+nse-udiff-repair-v1',
             'calendar':calendar_metadata(),
             'configuration_sha256':_sha256(ROOT/'config/model.json'),
             'universe_sha256':_sha256(ROOT/'config/universe.csv'),
-            'engine_sha256':_sha256(ROOT/'pipeline/engine.py')}
+            'engine_sha256':_sha256(ROOT/'pipeline/engine.py'),
+            'session_repair_sha256':_sha256(ROOT/'pipeline/nse_bhavcopy.py')}
 
 
 def publish_bundle(payload, charts, ledger, history_payload, health):
@@ -402,13 +405,17 @@ def attach_rotation_context(rows, themes):
 
 
 def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=None,
-          preserve_rank_comparison=False,required_sessions=None,previous_rows=None):
+          preserve_rank_comparison=False,required_sessions=None,previous_rows=None,
+          repair_report=None):
     benchmark=frames.get(cfg['benchmark'])
     if benchmark is None or len(benchmark)<cfg['min_history'] or str(benchmark.index[-1].date())!=asof:
         raise RuntimeError('The benchmark does not have the expected completed session')
     required_sessions = pd.DatetimeIndex(required_sessions if required_sessions is not None
                                          else benchmark.index[-cfg['min_history']:])
     quality = completeness_report(universe,frames,required_sessions,asof)
+    quality['session_repair'] = repair_report or {'source':'none','attempted_sessions':[],
+                                                   'repaired_bars':0,'skipped_bars':0,
+                                                   'errors':[],'remaining_concentrated_gaps':{}}
     fresh=quality['fresh']
     if fresh/len(universe)<cfg['min_coverage']:
         raise RuntimeError(f'Fresh coverage {fresh}/{len(universe)} is below the {cfg["min_coverage"]:.0%} publishing requirement')
@@ -520,6 +527,11 @@ def main():
     if cfg['benchmark'] not in frames:raise RuntimeError('Benchmark unavailable; prior snapshot preserved')
     tickers=list(dict.fromkeys([r['yahoo'] for r in universe]+[r['yahoo'] for r in ledger]))
     frames.update(fetch(tickers,asof,require_current=False,required_dates=required))
+    repair_report=repair_concentrated_gaps(universe,frames,required)
+    if repair_report['remaining_concentrated_gaps']:
+        remaining=json.dumps(repair_report['remaining_concentrated_gaps'],sort_keys=True)
+        errors=json.dumps(repair_report['errors'],sort_keys=True)
+        raise RuntimeError(f'Concentrated exchange-session gaps remain after Yahoo retry and NSE repair: {remaining}; NSE errors: {errors}')
     asof=select_session(universe,frames,frames[cfg['benchmark']],expected,cfg['min_coverage'])
     history=DATA/'history'/cfg['version']/f'{asof}.json'
     frames={t:d.loc[:asof] for t,d in frames.items() if not d.loc[:asof].empty}
@@ -530,7 +542,7 @@ def main():
     payload,charts,ledger=build(universe,frames,asof,cfg,read(ROOT/'config/themes.json',[]),ledger,
                                 current and not history.exists(),previous.get('themes',[]),
                                 previous.get('asof')==asof and previous.get('model')==cfg['version'],required,
-                                previous.get('analysis_rows',[]))
+                                previous.get('analysis_rows',[]),repair_report)
     payload['expected_session']=expected
     payload['freshness']='current' if current else 'delayed'
     if args.limit:

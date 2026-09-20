@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['pipeline/backtest.py', 'pipeline/engine.py', 'pipeline/ranking.py', 'pipeline/calendar.py', 'config/model.json', 'config/universe.csv', 'config/exchange_calendar_overrides.json', 'requirements.txt', 'research/PROTOCOL.md', '.github/workflows/backtest.yml']
+    paths: ['pipeline/backtest.py', 'pipeline/engine.py', 'pipeline/ranking.py', 'pipeline/calendar.py', 'pipeline/nse_bhavcopy.py', 'config/model.json', 'config/universe.csv', 'config/exchange_calendar_overrides.json', 'requirements.txt', 'research/PROTOCOL.md', '.github/workflows/backtest.yml']
 permissions:
   contents: write
   actions: read
