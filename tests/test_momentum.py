@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 from test_pipeline import CFG, META, fixture
-from pipeline.engine import normalized, momentum_indicators, vstop_series, theme_summary
+from pipeline.engine import normalized, momentum_indicators, vstop_series, theme_summary, _rma
 from pipeline.refresh import attach_rotation_context, build, rank_themes
 
 
@@ -17,6 +17,18 @@ def trending_frame(n=300):
 
 
 class MomentumIndicatorTests(unittest.TestCase):
+    def test_wilder_rma_uses_sma_seed(self):
+        result=_rma([1,2,3,4,5],3)
+        self.assertTrue(np.isnan(result[1]))
+        self.assertAlmostEqual(result[2],2)
+        self.assertAlmostEqual(result[3],8/3)
+
+    def test_vstop_waits_for_atr_before_trailing(self):
+        d=trending_frame(30);stop,state,atr=vstop_series(d,10,2)
+        np.testing.assert_allclose(stop[:9],d.Close.to_numpy()[:9])
+        self.assertTrue(np.isnan(atr[:9]).all())
+        self.assertTrue((state[:9]==1).all())
+
     def test_vstop_is_bullish_and_below_an_orderly_uptrend(self):
         d=trending_frame();stop,state,_=vstop_series(d,10,2)
         self.assertEqual(state[-1],1)
@@ -38,6 +50,12 @@ class MomentumIndicatorTests(unittest.TestCase):
             self.assertTrue(np.isfinite(values[key]),key)
         self.assertGreaterEqual(values['efficiency_20'],0)
         self.assertLessEqual(values['efficiency_20'],1)
+
+    def test_flat_directional_input_does_not_publish_nan(self):
+        d=trending_frame();d[['Open','High','Low','Close','Adj Close']]=100
+        values=momentum_indicators(d,CFG)
+        for key in ['adx','plus_di','minus_di','atr_pct']:
+            self.assertTrue(np.isfinite(values[key]),key)
 
 
 class RotationTests(unittest.TestCase):
@@ -64,6 +82,15 @@ class RotationTests(unittest.TestCase):
         ranked=rank_themes(themes,old)
         a=next(x for x in ranked if x['name']=='A')
         self.assertEqual(a['rank'],1);self.assertEqual(a['rank_change'],1)
+
+    def test_same_session_rerun_preserves_prior_rank_comparison(self):
+        themes=[{'taxonomy':'Curated theme','name':'A','status':'Leading','rs20':5,'rs60':8,'breadth':80}]
+        current=[{'taxonomy':'Curated theme','name':'A','rank':1,'status':'Leading',
+                  'previous_rank':3,'rank_change':2,'previous_status':'Mature'}]
+        item=rank_themes(themes,current,True)[0]
+        self.assertEqual(item['previous_rank'],3)
+        self.assertEqual(item['rank_change'],2)
+        self.assertEqual(item['previous_status'],'Mature')
 
     def test_detection_stores_indicator_state_for_future_evidence(self):
         raw,bench,asof=fixture();frames={'TEST.NS':normalized(raw,asof),CFG['benchmark']:normalized(bench,asof)}
@@ -93,6 +120,16 @@ class RotationTests(unittest.TestCase):
         attach_rotation_context([other],themes)
         self.assertEqual(other['theme_name'],'Test industry')
         self.assertEqual(other['theme_taxonomy'],'Industry')
+
+    def test_exit_review_requires_both_stock_indicators_bearish(self):
+        themes=[{'taxonomy':'Industry','name':'Test industry','members':['1','2','3'],'resolved':3,
+                 'status':'Mixed','rank':1,'coverage':100,'coverage_quality':'Broad',
+                 'breadth_change':0,'r20':3,'r60':6,'rs20':2}]
+        one={**self.row('1',2,3),'sector':'Test industry','vstop_bullish':False,'obv_bullish':True}
+        both={**self.row('2',2,3),'sector':'Test industry','vstop_bullish':False,'obv_bullish':False}
+        attach_rotation_context([one,both],themes)
+        self.assertFalse(one['exit_review']);self.assertEqual(one['rotation_posture'],'Watch')
+        self.assertTrue(both['exit_review']);self.assertEqual(both['rotation_posture'],'Exit review')
 
 
 if __name__=='__main__':unittest.main()

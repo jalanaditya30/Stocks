@@ -21,9 +21,11 @@ async function boot(data=snapshot,chartDate=data.asof,research=null){
  assert.equal(d.querySelector('#stock-dialog').open,true);assert.ok(d.querySelector('#detail-chart svg'));
  assert.match(d.querySelector('#detail-content').textContent,/VStop 10×2/);
  assert.match(d.querySelector('#detail-content').textContent,/OBV MACD/);
+ assert.match(d.querySelector('#detail-content').textContent,/requires VStop and OBV MACD to both be bearish/);
  assert.match(d.querySelector('#detail-content').textContent,/Volume 5D\/30D: 2.25×/);
  assert.match(d.querySelector('#detail-content').textContent,/1.4% of live market cap/);
  const svg=d.querySelector('#detail-chart svg'),cross=d.querySelector('.chart-cross');
+ const vstop=svg.querySelector('.vstop');assert.ok(Number(vstop.getAttribute('y1'))>=35&&Number(vstop.getAttribute('y1'))<=252,'VStop is inside the price scale');
  svg.getBoundingClientRect=()=>({left:0,top:0,width:900,height:370});
  svg.dispatchEvent(new w.MouseEvent('mousemove',{clientX:100,clientY:100}));
  assert.equal(cross.hidden,false);assert.match(d.querySelector('.chart-legend').textContent,/O 100.00/);
@@ -38,7 +40,7 @@ async function boot(data=snapshot,chartDate=data.asof,research=null){
  d.querySelector('#charts-back').click();
  d.querySelector('[data-view="custom"]').click();
  const upload=d.querySelector('#custom-import'),file={name:'Blue list.txt',size:50,text:async()=> 'NSE:OTHER,NSE:TEST,BSE:UNKNOWN'};Object.defineProperty(upload,'files',{value:[file],configurable:true});upload.dispatchEvent(new w.Event('change'));await new Promise(r=>setImmediate(r));
- assert.equal(d.querySelectorAll('#stock-rows tr').length,2);assert.match(d.querySelector('#empty').textContent,/UNKNOWN/);assert.equal(JSON.parse(w.localStorage.getItem('stocks-custom-watchlist-v1')).length,3);
+ assert.equal(d.querySelectorAll('#stock-rows tr').length,2);assert.match(d.querySelector('#empty').textContent,/BSE:UNKNOWN.*BSE-only analysis/s);assert.deepEqual(JSON.parse(w.localStorage.getItem('stocks-custom-watchlist-v1')),['OTHER','TEST','BSE:UNKNOWN']);
  d.querySelector('#all-charts').click();await new Promise(r=>setImmediate(r));assert.equal(d.querySelectorAll('.bulk-chart-card').length,2);assert.match(d.querySelector('.bulk-chart-card .company-button').textContent,/OTHER/);d.querySelector('#charts-back').click();
  d.querySelector('[data-view="themes"]').click();d.querySelector('#theme-grid [data-theme]').click();assert.equal(d.querySelectorAll('#stock-rows tr').length,1);
  assert.equal(d.querySelector('#all-charts').hidden,false);
@@ -48,7 +50,7 @@ async function boot(data=snapshot,chartDate=data.asof,research=null){
  dom.window.close();
  ({dom,w,d}=await boot({schema:1,status:'awaiting_first_scan',asof:null,policy:{benchmark:'^CRSLDX'},rows:[],themes:[],tracking:[],summary:[]}));
  assert.match(d.querySelector('#empty').textContent,/Waiting for the first/);assert.equal(d.querySelectorAll('#stock-rows tr').length,0);assert.match(d.querySelector('#stats').textContent,/—/);dom.window.close();
- ({dom,w,d}=await boot(snapshot,'2026-09-17'));d.querySelector('[data-stock]').click();await new Promise(r=>setImmediate(r));assert.match(d.querySelector('#detail-chart').textContent,/sessions differ/);dom.window.close();
+ ({dom,w,d}=await boot(snapshot,'2026-09-17'));d.querySelector('[data-stock]').click();await new Promise(r=>setImmediate(r));assert.match(d.querySelector('#detail-chart').textContent,/snapshots differ/);dom.window.close();
  const report=JSON.parse(fs.readFileSync('data/backtest/report.json','utf8'));report.model='confirmed-v3-industry-rank';report.benchmark={...report.benchmark,name:'Nifty 500',ticker:'^CRSLDX'};
  ({dom,w,d}=await boot({...snapshot,freshness:'delayed',expected_session:'2026-09-21',tracking:[{isin:'INE000000003',symbol:'NO_LONGER_ELIGIBLE',setup:'Confirmed moves',first_seen:'2026-09-01',state:'Below breakout level',outcomes:{'5':{best_excursion:6,worst_excursion:-7,net:-3,'5_before_minus5':'ambiguous_same_session'}}}]},snapshot.asof,report));
  d.querySelector('[data-view="evidence"]').click();

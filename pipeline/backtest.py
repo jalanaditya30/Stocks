@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from pipeline.refresh import ROOT, fetch, read, write, expected_session
+from pipeline.engine import vstop_series, obv_macd_series
 
 BENCH='^CRSLDX'
 HORIZONS=[5,10,20,40,60]
@@ -185,14 +186,44 @@ def choose(variants):
     return max(qualified,key=lambda k:variants[k]['validation']['mean_excess_yield_adjusted']) if qualified else 'baseline'
 
 
-def portfolio(records,frames,b,start,end,variant='baseline'):
+def dual_negative_states(frames,cfg):
+    """Completed-close exit observations; execution belongs to the next open."""
+    out={}
+    for ticker,d in frames.items():
+        if ticker==BENCH or d is None or d.empty:
+            continue
+        _,vtrend,_=vstop_series(d,cfg.get('vstop_length',10),cfg.get('vstop_factor',2))
+        _,obv_state,_=obv_macd_series(d)
+        out[ticker]=pd.Series((vtrend<0)&(obv_state<0),index=d.index)
+    return out
+
+
+def portfolio(records,frames,b,start,end,variant='baseline',exit_rule='fixed_20',exit_signals=None):
     days=b.index[(b.index>=start)&(b.index<=end)]
     if len(days)<2:return None
+    if exit_rule not in ['fixed_20','dual_negative']:
+        raise ValueError(f'Unknown exit rule: {exit_rule}')
+    if exit_rule=='dual_negative' and exit_signals is None:
+        raise ValueError('Dual-negative exit states are required')
     positions=[None]*10;cash=np.full(10,.1);equity=[];exposure=[];events={};trades=0;missing_marks=0
+    rule_exits=0;holding_sessions=[];delayed_exit_opens=0
     for r in records:
         if selected(r,variant) and start<=r['signal']<=end and r['i']+1<len(b):
             events.setdefault(b.index[r['i']+1],[]).append(r)
     for day in days:
+        # A bearish state is known only after the prior close. Exit at this
+        # session's open, then allow that cash sleeve to accept a new signal.
+        if exit_rule=='dual_negative':
+            for j,p in enumerate(positions):
+                if p is None or not p['exit_pending']:
+                    continue
+                d=frames[p['ticker']]
+                valid=day in d.index and np.isfinite(d.loc[day,'Open']) and d.loc[day,'Open']>0
+                if valid:
+                    cash[j]=p['shares']*float(d.loc[day,'Open'])*.9975
+                    holding_sessions.append(p['age']);positions[j]=None;rule_exits+=1
+                else:
+                    delayed_exit_opens+=1
         active={p['ticker'] for p in positions if p};industries=Counter(p['industry'] for p in positions if p)
         for r in sorted(events.get(day,[]),key=lambda x:(-(x.get('stock_vs_industry_r20') if x.get('stock_vs_industry_r20') is not None else -999),-x['participation'],-x['rs20'],x['symbol'])):
             if r['ticker'] in active or industries[r['industry']]>=2:continue
@@ -204,7 +235,8 @@ def portfolio(records,frames,b,start,end,variant='baseline'):
             if not np.isfinite(opening) or opening<=0:continue
             exit_i=r['i']+20
             positions[free]={'ticker':r['ticker'],'industry':r['industry'],'shares':cash[free]/(opening*1.0025),
-                             'mark':opening,'exit':b.index[exit_i] if exit_i<len(b) else pd.Timestamp.max}
+                             'mark':opening,'exit':b.index[exit_i] if exit_i<len(b) else pd.Timestamp.max,
+                             'exit_pending':False,'age':0}
             cash[free]=0;active.add(r['ticker']);industries[r['industry']]+=1;trades+=1
         deployed=0
         for j,p in enumerate(positions):
@@ -213,9 +245,15 @@ def portfolio(records,frames,b,start,end,variant='baseline'):
             valid=day in d.index and np.isfinite(d.loc[day,'Close'])
             if valid:p['mark']=float(d.loc[day,'Close'])
             else:missing_marks+=1
-            if day>=p['exit'] and valid:
+            p['age']+=1
+            if exit_rule=='fixed_20' and day>=p['exit'] and valid:
                 cash[j]=p['shares']*p['mark']*.9975;positions[j]=None
+                holding_sessions.append(p['age']);rule_exits+=1
             else:deployed+=p['shares']*p['mark']
+            if positions[j] is not None and exit_rule=='dual_negative' and valid:
+                signal=exit_signals.get(p['ticker'])
+                if signal is not None and day in signal.index and bool(signal.loc[day]):
+                    p['exit_pending']=True
         value=float(cash.sum()+deployed);equity.append(value);exposure.append(deployed/value)
     # Liquidation assumption for remaining holdings; stale marks counted explicitly.
     final=float(cash.sum()+sum(p['shares']*p['mark']*.9975 for p in positions if p));equity[-1]=final
@@ -226,13 +264,18 @@ def portfolio(records,frames,b,start,end,variant='baseline'):
     benchmark=(b.loc[days,'Close'].ffill()/b.loc[days[0],'Open']).to_numpy(float)
     growth=1.02**((days-days[0]).days.to_numpy()/365.25)
     dd=lambda a:float(np.min(a/np.maximum.accumulate(a)-1)*100)
-    return {'trades':trades,'cagr':round((final**(1/years)-1)*100,2),
+    return {'exit_rule':exit_rule,'trades':trades,'rule_exits':rule_exits,
+        'end_liquidations':sum(p is not None for p in positions),
+        'delayed_exit_opens':delayed_exit_opens,
+        'median_holding_sessions':round(float(np.median(holding_sessions)),1) if holding_sessions else None,
+        'cagr':round((final**(1/years)-1)*100,2),
         'benchmark_cagr':round((benchmark[-1]**(1/years)-1)*100,2),
         'benchmark_cagr_yield_adjusted':round(((benchmark[-1]*growth[-1])**(1/years)-1)*100,2),
         'max_drawdown':round(dd(curve),2),'benchmark_max_drawdown':round(dd(np.r_[1,benchmark]),2),
         'average_exposure':round(float(np.mean(exposure))*100,1),'missing_price_marks':missing_marks,
         'benchmark_missing_marks':benchmark_missing,
-        'unresolved_exit_positions':sum(p is not None and p['exit']<=days[-1] for p in positions),
+        'unresolved_exit_positions':sum(p is not None and
+            (p['exit_pending'] if exit_rule=='dual_negative' else p['exit']<=days[-1]) for p in positions),
         'curve':[{'date':str(day.date()),'strategy':round(float(e)*100,3),'benchmark':round(float(bv)*100,3)} for day,e,bv in zip(days,equity,benchmark)]}
 
 
@@ -290,7 +333,11 @@ def run():
     results={part:[summarize(records,h,*dates,chosen) for h in HORIZONS] for part,dates in ranges.items()}
     annual=[{'year':year,**summarize(records,20,max(ranges['full'][0],f'{year}-01-01'),min(ranges['full'][1],f'{year}-12-31'),chosen)} for year in range(start.year,end.year+1)]
     setups={s:[summarize(records,h,*ranges['full'],chosen,s) for h in HORIZONS] for s in ['Confirmed moves','Leaders resuming']}
-    ports={name:{part:portfolio(records,frames,mid,*ranges[part],name) for part in ['full','holdout']} for name in dict.fromkeys(['baseline',chosen])}
+    portfolio_variants=list(dict.fromkeys(['baseline',chosen]))
+    ports={name:{part:portfolio(records,frames,mid,*ranges[part],name) for part in ['full','holdout']} for name in portfolio_variants}
+    exits=dual_negative_states(frames,cfg)
+    exit_ports={name:{part:portfolio(records,frames,mid,*ranges[part],name,'dual_negative',exits)
+                      for part in ['full','holdout']} for name in portfolio_variants}
     hold=variants[chosen]['holdout'];ci=hold.get('excess_ci95');p=ports[chosen]['holdout']
     supported=bool(hold.get('n',0)>=100 and ci and ci[0]>0 and p and p['cagr']>p['benchmark_cagr_yield_adjusted'])
     report={'schema':1,'status':'complete','model':cfg['version'],'generated':datetime.now(timezone.utc).isoformat(),
@@ -301,6 +348,7 @@ def run():
                      'benchmark_scope':'market regime, sector context, and portfolio outcome comparison'},
         'conclusion':'Positive holdout evidence, subject to material survivorship and execution limitations.' if supported else 'The holdout does not establish reliable index-beating performance. Do not treat confirmation as a profitable edge.',
         'variants':variants,'results':results,'annual':annual,'setups':setups,'portfolios':ports,
+        'exit_portfolios':exit_ports,
         'coverage':{'registry':len(universe),'downloaded':len(frames)-1,'missing_symbols':missing_symbols,
                     'benchmark_missing_sessions':benchmark_gaps,
                     'daily_min_eligible':int(eligible.loc[start:end].min()),'daily_median_eligible':int(eligible.loc[start:end].median()),
@@ -312,6 +360,7 @@ def run():
             'Yahoo historical revisions and corporate-action errors may remain. Raw inputs are retained as a workflow artifact.',
             'Missing benchmark quotes leave trade comparisons unresolved. The buy-and-hold curve carries the last observed mark on those dates.',
             'Historical replay assumes data were available after each close; actual publication delays are not reconstructed.',
+            'The dual-negative exit overlay uses the full retained historical input for path-dependent indicators; live refreshes use a two-year download, so marginal states can differ with initialization history.',
             'MFE is the best subsequent high, not a sell rule or an achievable realised return.',
             'Month-block intervals address some clustering but do not eliminate survivorship bias or model-selection uncertainty.']}
     output=ROOT/('tmp/backtest-limited' if args.limit else 'data/backtest');output.mkdir(parents=True,exist_ok=True)

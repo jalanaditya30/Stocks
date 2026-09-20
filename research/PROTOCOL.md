@@ -17,3 +17,9 @@ Report yearly and setup-level results, sample sizes, unresolved counts, and 95% 
 Keep the baseline and all variants visible. Failed or inconclusive tests are publishable results. Do not optimise on the final holdout after reading it.
 
 Data quality: permit at most 1% missing Nifty 500 sessions and list their exact dates. A trade comparison crossing a missing benchmark observation remains unresolved; never fill its return. For the separate buy-and-hold equity curve only, carry the last observed mark on a missing quote day and report the missing-mark count. The initial benchmark purchase and final comparison prices must exist. The original downloaded input artifact is reused when repairing evaluation code; it is not replaced opportunistically based on outcomes.
+
+## User-specified exit overlay — frozen 20 September 2026 before its result
+
+Keep the entry detector, simultaneous-entry ranking, ten cash sleeves and two-per-industry cap unchanged. Add a separate portfolio overlay for the user's stated exit discipline: after an owned stock has a completed daily close where **both** VStop (10, close, 2) and RafaelZioni OBV MACD are bearish, sell at the next available session's open. Never sell at the same close that supplied the two indicator states. Apply 0.25% cost at entry and exit, disclose delayed exits caused by missing opens, and liquidate remaining positions at the final marked close for period comparison.
+
+Report CAGR, maximum drawdown, average exposure, number of rule exits, end-period liquidations and median completed holding time beside the unchanged fixed-20-session portfolio. This is a user-defined descriptive overlay added after the entry-model holdout had already been viewed; it is **not** a new untouched validation, must not select an entry variant, and must not be used to claim a proven edge.

@@ -79,4 +79,33 @@ class HistoricalTests(unittest.TestCase):
         self.assertEqual(p['trades'],1)
         self.assertAlmostEqual(p['curve'][-1]['strategy'],100+net*.1,places=3)
 
+    def test_dual_negative_exit_uses_following_open(self):
+        i=300
+        signal={'ticker':'TEST.NS','industry':'Test industry','i':i,'signal':str(self.b.index[i].date()),
+                'symbol':'TEST','extension':2,'r5':4,'market_trend':True,'rs20':5,
+                'stock_vs_industry_r20':3,'participation':2}
+        states=pd.Series(False,index=self.d.index);states.loc[self.b.index[i+1]]=True
+        p=portfolio([signal],{'TEST.NS':self.d},self.b,str(self.b.index[i].date()),
+                    str(self.b.index[i+3].date()),exit_rule='dual_negative',
+                    exit_signals={'TEST.NS':states})
+        entry=float(self.d.loc[self.b.index[i+1],'Open'])
+        exit_open=float(self.d.loc[self.b.index[i+2],'Open'])
+        expected=(.9+.1/(entry*1.0025)*exit_open*.9975)*100
+        self.assertEqual(p['rule_exits'],1)
+        self.assertEqual(p['median_holding_sessions'],1)
+        self.assertAlmostEqual(p['curve'][-1]['strategy'],expected,places=3)
+
+    def test_dual_negative_exit_discloses_missing_next_open(self):
+        i=300;changed=self.d.copy();changed.loc[self.b.index[i+2],'Open']=np.nan
+        signal={'ticker':'TEST.NS','industry':'Test industry','i':i,'signal':str(self.b.index[i].date()),
+                'symbol':'TEST','extension':2,'r5':4,'market_trend':True,'rs20':5,
+                'stock_vs_industry_r20':3,'participation':2}
+        states=pd.Series(False,index=changed.index);states.loc[self.b.index[i+1]]=True
+        p=portfolio([signal],{'TEST.NS':changed},self.b,str(self.b.index[i].date()),
+                    str(self.b.index[i+4].date()),exit_rule='dual_negative',
+                    exit_signals={'TEST.NS':states})
+        self.assertEqual(p['delayed_exit_opens'],1)
+        self.assertEqual(p['rule_exits'],1)
+        self.assertEqual(p['median_holding_sessions'],2)
+
 if __name__=='__main__':unittest.main()

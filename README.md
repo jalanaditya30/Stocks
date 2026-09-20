@@ -11,7 +11,7 @@ A daily Indian-equity research workspace for **confirmed moves** and **leaders r
 - Established long-term momentum leaders as a separate context view.
 - Interactive candlestick/volume charts from 1 January with OHLCV crosshairs, VStop, breakout and first-detection markers, plus dense two-column chart scans for watchlists and theme/industry groups.
 - Sortable volume 5D/30D and 20-day turnover/market-cap context alongside the existing cash-turnover confirmation.
-- Browser-local saved and uploaded-symbol watchlists, review/dismiss decisions, notes, and export/import. Uploaded lists accept comma-separated `NSE:`/`BSE:` symbols and do not leave the browser.
+- Browser-local saved and uploaded-symbol watchlists, review/dismiss decisions, notes, and export/import. Uploaded lists analyse configured `NSE:` symbols; BSE-only tokens are retained and disclosed as unsupported rather than misidentified. Lists do not leave the browser.
 - Immutable first daily snapshots, a detection ledger, and prospective 5/10/20/40-session outcomes.
 - A visible refresh-health state. Failed or incomplete refreshes preserve the last successful snapshot.
 
@@ -77,7 +77,7 @@ Source assets: [jalanaditya30/Sector-data](https://github.com/jalanaditya30/Sect
 
 Open **Evidence** in the app for published results. The first run is started by the research implementation commit; subsequent runs can be requested under **Actions → Five-year historical evaluation**. It downloads seven years to supply a five-year evaluation plus trailing warmup.
 
-The [frozen protocol](research/PROTOCOL.md) specifies next-open entries, costs, Nifty 500 comparison, chronological development/validation/holdout periods, three limited alternatives, and a finite-capital portfolio. The research code is tested against the live detector for identical past-only signals. A selected historical filter is not automatically promoted into live rules.
+The [frozen protocol](research/PROTOCOL.md) specifies next-open entries, costs, Nifty 500 comparison, chronological development/validation/holdout periods, three limited alternatives, and a finite-capital portfolio. It also records the later user-specified VStop-and-OBV dual-negative exit overlay separately from the already-viewed entry-model holdout. The research code is tested against the live detector for identical past-only signals. A selected historical filter is not automatically promoted into live rules.
 
 ```bash
 python -m pipeline.backtest

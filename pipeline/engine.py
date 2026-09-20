@@ -59,6 +59,25 @@ def _dema(values, length):
     return 2 * first - second
 
 
+def _rma(values, length):
+    """Pine/Wilder RMA: SMA seed, then alpha=1/length recursion."""
+    values=np.asarray(values,dtype=float)
+    out=np.full(len(values),np.nan)
+    finite=np.flatnonzero(np.isfinite(values))
+    if len(finite)<length:
+        return out
+    start=int(finite[length-1])
+    out[start]=float(np.mean(values[finite[:length]]))
+    for i in range(start+1,len(values)):
+        if np.isfinite(values[i]):
+            out[i]=(out[i-1]*(length-1)+values[i])/length
+        else:
+            # Pine moving averages ignore na source values rather than
+            # poisoning every subsequent recursive value.
+            out[i]=out[i-1]
+    return out
+
+
 def vstop_series(d, length=10, factor=2.0):
     """TradingView ta.vStop using daily close, ATR length and multiplier."""
     high, low, close = (d[k].to_numpy(float) for k in ['High','Low','Close'])
@@ -69,11 +88,17 @@ def vstop_series(d, length=10, factor=2.0):
         atr[length-1]=np.mean(tr[:length])
         for i in range(length,len(tr)):atr[i]=(atr[i-1]*(length-1)+tr[i])/length
     stop=np.full(len(close),np.nan);trend=np.ones(len(close),dtype=int)
-    running_max=running_min=close[0];previous_stop=0.0;previous_trend=1
+    running_max=running_min=close[0];previous_stop=np.nan;previous_trend=1
     for i,src in enumerate(close):
-        atr_multiple=(atr[i]*factor) if np.isfinite(atr[i]) else tr[i]
         running_max=max(running_max,src);running_min=min(running_min,src)
-        current_stop=max(previous_stop,running_max-atr_multiple) if previous_trend==1 else min(previous_stop,running_min+atr_multiple)
+        atr_multiple=atr[i]*factor
+        if np.isfinite(previous_stop) and np.isfinite(atr_multiple):
+            current_stop=(max(previous_stop,running_max-atr_multiple) if previous_trend==1
+                          else min(previous_stop,running_min+atr_multiple))
+        else:
+            # Pine's nz(calculated_stop, source) holds the source until ATR and
+            # the recursive stop are both initialized.
+            current_stop=src
         current_trend=1 if src-current_stop>=0 else -1
         if i and current_trend!=previous_trend:
             running_max=running_min=src
@@ -106,13 +131,15 @@ def obv_macd_series(d):
         if np.isfinite(macd[i-1:i+1]).all():
             endpoint[i]=macd[i]
     channel=np.full(len(macd),np.nan); state=np.zeros(len(macd),dtype=int)
-    cumulative=0.0; count=0; prior=None; prior_state=0
+    cumulative=0.0; prior=None; prior_state=0
     for i,x in enumerate(endpoint):
         if not np.isfinite(x):continue
         if prior is None:
-            prior=x;channel[i]=x;state[i]=1;prior_state=1;continue
-        cumulative += abs(x-prior); count += 1
-        threshold=cumulative/count
+            prior=x;channel[i]=x;state[i]=0;continue
+        cumulative += abs(x-prior)
+        # The source script divides cumulative movement by n5=cum(1)-1: the
+        # absolute chart bar number, not the count since MACD became finite.
+        threshold=cumulative/max(i,1)
         current=x if x>prior+threshold or x<prior-threshold else prior
         current_state=1 if current>prior else -1 if current<prior else prior_state
         channel[i]=current;state[i]=current_state
@@ -126,11 +153,16 @@ def directional_indicators(d, length=14):
     plus=np.where((up>down)&(up>0),up,0);minus=np.where((down>up)&(down>0),down,0)
     previous=np.r_[close[0],close[:-1]]
     tr=np.maximum(high-low,np.maximum(np.abs(high-previous),np.abs(low-previous)))
-    smooth=lambda x:pd.Series(x).ewm(alpha=1/length,adjust=False,min_periods=length).mean().to_numpy()
-    atr=smooth(tr);plus_di=np.divide(100*smooth(plus),atr,out=np.zeros(len(atr)),where=atr>0)
-    minus_di=np.divide(100*smooth(minus),atr,out=np.zeros(len(atr)),where=atr>0)
-    dx=np.divide(100*np.abs(plus_di-minus_di),plus_di+minus_di,out=np.zeros(len(atr)),where=(plus_di+minus_di)>0)
-    return smooth(dx),plus_di,minus_di,atr
+    atr=_rma(tr,length);plus_rma=_rma(plus,length);minus_rma=_rma(minus,length)
+    plus_di=np.full(len(atr),np.nan);minus_di=np.full(len(atr),np.nan)
+    initialized=np.isfinite(atr)
+    plus_di[initialized]=0;minus_di[initialized]=0
+    np.divide(100*plus_rma,atr,out=plus_di,where=initialized&(atr>0))
+    np.divide(100*minus_rma,atr,out=minus_di,where=initialized&(atr>0))
+    denominator=plus_di+minus_di
+    dx=np.full(len(atr),np.nan);dx[np.isfinite(denominator)]=0
+    np.divide(100*np.abs(plus_di-minus_di),denominator,out=dx,where=denominator>0)
+    return _rma(dx,length),plus_di,minus_di,atr
 
 
 def momentum_indicators(d, cfg):
@@ -302,12 +334,12 @@ def theme_summary(rows, members, name, taxonomy):
     breadth200 = float(np.mean(vals('above200'))*100) if vals('above200') else None
     prev = float(np.mean(vals('above50_week_ago'))*100) if vals('above50_week_ago') else None
     median = lambda k: round(float(np.median(vals(k))),2) if vals(k) else None
-    delta = round(breadth-prev,1) if usable else None
+    delta = round(breadth-prev,1) if breadth is not None and prev is not None else None
     status = 'Insufficient coverage'
     vstop_share=round(float(np.mean(vals('vstop_bullish'))*100),1) if vals('vstop_bullish') else None
     obv_share=round(float(np.mean(vals('obv_bullish'))*100),1) if vals('obv_bullish') else None
-    if enough:
-        rs20,rs60=median('rs20'),median('rs60')
+    rs20,rs60=median('rs20'),median('rs60')
+    if enough and all(x is not None for x in [breadth,delta,vstop_share,rs20,rs60]):
         status = ('Avoid' if rs20<0 and rs60<0 and breadth<40 else
                   'Weakening' if delta<=-5 and (rs20<0 or vstop_share<50) else
                   'Emerging' if delta>=5 and rs20>0 and breadth<60 else

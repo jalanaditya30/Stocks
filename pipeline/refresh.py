@@ -231,7 +231,7 @@ def upside_summary(outcomes):
     return out
 
 
-def rank_themes(themes, previous=None):
+def rank_themes(themes, previous=None, preserve_previous_comparison=False):
     priority={'Leading':0,'Emerging':1,'Mature':2,'Mixed':3,'Weakening':4,'Avoid':5,'Insufficient coverage':6}
     score=lambda value,missing: missing if value is None else value
     old={(x.get('taxonomy'),x.get('name')):x for x in (previous or [])}
@@ -241,9 +241,17 @@ def rank_themes(themes, previous=None):
                                  -score(x.get('rs60'),-999),-score(x.get('breadth'),-1),x['name']))
         for rank,item in enumerate(group,1):
             prior=old.get((taxonomy,item['name']),{})
-            item['rank']=rank;item['previous_rank']=prior.get('rank')
-            item['rank_change']=prior.get('rank')-rank if prior.get('rank') else None
-            item['previous_status']=prior.get('status')
+            item['rank']=rank
+            if preserve_previous_comparison:
+                # A same-session refresh must not turn yesterday's comparison
+                # into a self-comparison and erase the published rank movement.
+                item['previous_rank']=prior.get('previous_rank')
+                item['rank_change']=prior.get('rank_change')
+                item['previous_status']=prior.get('previous_status')
+            else:
+                item['previous_rank']=prior.get('rank')
+                item['rank_change']=prior.get('rank')-rank if prior.get('rank') else None
+                item['previous_status']=prior.get('status')
     return sorted(themes,key=lambda x:(0 if x['taxonomy']=='Curated theme' else 1,x['rank']))
 
 
@@ -276,18 +284,22 @@ def attach_rotation_context(rows, themes):
         row['theme_memberships']=[{'name':t['name'],'state':t['status'],'rank':t['rank']} for t in memberships]
         supportive=best and best['status'] in ['Leading','Emerging']
         weak=best and best['status'] in ['Weakening','Avoid']
+        row['exit_review']=not row['vstop_bullish'] and not row['obv_bullish']
         if row['candidate'] and supportive:
             posture='Sector-supported setup'
+        elif row['exit_review']:
+            posture='Exit review'
         elif row['vstop_bullish'] and row['obv_bullish'] and not weak:
             posture='Hold / monitor'
-        elif not row['vstop_bullish'] or weak:
-            posture='Review / rotate'
+        elif weak:
+            posture='Sector review'
         else:
             posture='Watch'
         row['rotation_posture']=posture
 
 
-def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=None):
+def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=None,
+          preserve_rank_comparison=False):
     benchmark=frames.get(cfg['benchmark'])
     if benchmark is None or len(benchmark)<cfg['min_history'] or str(benchmark.index[-1].date())!=asof:
         raise RuntimeError('The benchmark does not have the expected completed session')
@@ -305,9 +317,9 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     for r in universe:groups[r['industry_group']].add(r['isin'])
     theme_rows=[theme_summary(rows,ids,name,'Industry') for name,ids in groups.items()]
     theme_rows += [theme_summary(rows,set(t['members']),t['name'],'Curated theme') for t in themes]
-    theme_rows=rank_themes(theme_rows,previous_themes)
+    theme_rows=rank_themes(theme_rows,previous_themes,preserve_rank_comparison)
     attach_rotation_context(rows,theme_rows)
-    posture={'Sector-supported setup':0,'Hold / monitor':1,'Watch':2,'Review / rotate':3}
+    posture={'Sector-supported setup':0,'Hold / monitor':1,'Watch':2,'Sector review':3,'Exit review':4}
     rows.sort(key=lambda r:(not r['candidate'],-(r['stock_vs_industry_r20'] if r['stock_vs_industry_r20'] is not None else -999),-r['participation'],
                             posture[r['rotation_posture']],r['isin']))
     ledger,tracking,summary=track(ledger,rows,frames,benchmark,asof,cfg,record)
@@ -336,14 +348,17 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
             'regime':regime,'above50':bool(bc[-1]>sma50),'above200':bool(bc[-1]>sma200) if sma200 else None}
     rotation={'leaders':[t['name'] for t in theme_rows if t['taxonomy']=='Curated theme' and t['status'] in ['Leading','Emerging']][:5],
               'review':[t['name'] for t in theme_rows if t['taxonomy']=='Curated theme' and t['status'] in ['Weakening','Avoid']][:5]}
-    payload={'schema':1,'model':cfg['version'],'asof':asof,
-        'generated':datetime.now(timezone.utc).isoformat(),'status':'ready','source':'Yahoo Finance / yfinance; completed daily bars',
+    generated=datetime.now(timezone.utc).isoformat()
+    snapshot_id=f"{cfg['version']}:{asof}:{generated}"
+    payload={'schema':1,'model':cfg['version'],'asof':asof,'snapshot_id':snapshot_id,
+        'generated':generated,'status':'ready','source':'Yahoo Finance / yfinance; completed daily bars',
         'research_status':'New descriptive rules; prospective evidence accumulating. No claimed win probability.',
         'policy':cfg,'market':market,'coverage':{'universe':len(universe),'fresh':fresh,'eligible':len(rows),
              'excluded':len(excluded),'reasons':dict(Counter(x['reason'] for x in excluded))},
         'rows':rows,'themes':theme_rows,'rotation':rotation,'tracking':tracking,'summary':summary,'excluded':excluded,
         'surveillance':'Not automatically screened for ASM/GSM or price bands; verify on NSE before acting.'}
-    return payload,{'asof':asof,'charts':charts},ledger
+    return payload,{'schema':1,'model':cfg['version'],'asof':asof,
+                    'snapshot_id':snapshot_id,'charts':charts},ledger
 
 
 def main():
@@ -369,7 +384,8 @@ def main():
         raise RuntimeError('Refusing to replace a newer snapshot of the same model')
     current=asof==expected
     payload,charts,ledger=build(universe,frames,asof,cfg,read(ROOT/'config/themes.json',[]),ledger,
-                                current and not history.exists(),previous.get('themes',[]))
+                                current and not history.exists(),previous.get('themes',[]),
+                                previous.get('asof')==asof and previous.get('model')==cfg['version'])
     payload['expected_session']=expected
     payload['freshness']='current' if current else 'delayed'
     if args.limit:
@@ -385,7 +401,7 @@ def main():
     write(DATA/'charts.json',charts)
     write(DATA/'latest.json',payload)
     write(DATA/'health.json',{'status':'ok' if current else 'delayed','asof':asof,
-        'expected_session':expected,'message':None if current else
+        'expected_session':expected,'snapshot_id':payload['snapshot_id'],'message':None if current else
         f'Provider coverage is incomplete for {expected}. Showing the common completed session {asof}; no new live detections recorded.',
         'checked_at':datetime.now(timezone.utc).isoformat()})
     print(f"Published {asof}: {len(payload['rows'])} eligible, {sum(r['candidate'] for r in payload['rows'])} confirmed setups",flush=True)
