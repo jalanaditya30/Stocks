@@ -104,13 +104,16 @@ li,.detail-links{font-size:14px}
 .posture strong{font-family:Manrope,system-ui;font-size:17px}
 .posture>span:last-child{color:var(--muted);font-size:13px;margin-left:auto}
 .detail-metric>span{display:block;color:var(--muted);font-size:11px;margin-top:3px}
-#stock-rows td:nth-child(2),#stock-rows td:nth-child(3),#stock-rows td:nth-child(4){text-align:left}
+#stock-rows td:nth-child(2),#stock-rows td:nth-child(3),#stock-rows td:nth-child(4),#stock-rows td:nth-child(5){text-align:left}
 #stock-rows strong{font-weight:700}
+.rank-number{display:block;font-family:Manrope,system-ui;font-size:17px;line-height:1.2}.rank-number small,.rank-panel strong small{font-size:10px;font-weight:600;color:var(--muted)}.rank-cell{min-width:185px}
+.rank-panel{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-bottom:18px}.rank-panel>div{background:#f8faf9;padding:13px 15px}.rank-panel>div>small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.8px}.rank-panel strong{display:inline-block;font-family:Manrope,system-ui;font-size:21px;margin-top:3px}.rank-panel>div>span{color:var(--muted);font-size:12px;margin-left:8px}.rank-panel p{grid-column:1/-1;background:#fff;color:var(--muted);font-size:10px;padding:7px 15px}
 .company-name{display:block;font-size:13px;max-width:270px;overflow:hidden;text-overflow:ellipsis}.unavailable-row td{background:#fbfaf7;color:#667680}.unavailable-row:hover td{background:#faf7ef}
 @media(max-width:800px){
  .rotation-board{grid-template-columns:1fr}
  .posture{align-items:flex-start;flex-direction:column;gap:4px}
  .posture>span:last-child{margin-left:0}
+ .rank-panel{grid-template-columns:1fr}.rank-panel p{grid-column:1}
 }
 
 /* Interactive stock chart: one shared x-axis keeps candles and volume aligned. */

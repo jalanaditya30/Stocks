@@ -4,8 +4,9 @@ const fs=require('node:fs');
 const assert=require('node:assert/strict');
 const html=fs.readFileSync('index.html','utf8'),code=fs.readFileSync('app.js','utf8');
 const base={isin:'INE000000001',symbol:'TEST',name:'Synthetic Test Company',sector:'Test industry',asof:'2026-09-18',last:114,r5:4,r20:12,r60:18,rs20:10,rs60:15,turnover_cr:12,participation:2,volume_ratio_5d_30d:2.25,turnover_20d_cr:28.9,mcap_cr:2096,turnover_mcap_20d_pct:1.379,up_volume_share_20:62,extension:3,candidate:true,setup:'Confirmed moves',stage:'Confirmed move',rotation_posture:'Sector-supported setup',momentum_confirmations:4,momentum_checks:['VStop bullish','OBV MACD bullish','Directional trend','Efficient advance'],vstop:108,vstop_bullish:true,vstop_distance:5.5,obv_bullish:true,obv_flip:false,adx:31,plus_di:29,minus_di:12,efficiency_20:.55,atr_pct:2.1,theme_name:'Test theme',theme_state:'Leading',theme_rank:1,theme_taxonomy:'Curated theme',theme_breadth_change:10,industry_name:'Test industry',industry_rank:1,stock_vs_industry_r20:2,theme_memberships:[{name:'Test theme',state:'Leading',rank:1}],anchor:110,anchor_adjusted:110,leader:true,reasons:['Held above reference'],risks:['Synthetic test'],tracking:null};
-const other={...base,isin:'INE000000002',symbol:'OTHER',name:'Other Test Company',candidate:false,setup:'Other',stage:'Trend intact',leader:false,scanner_eligible:true,analysis_available:true};
-const context={...base,isin:'INE000000003',symbol:'THIN',name:'Thin Test Company',candidate:false,setup:'Other',stage:'Trend intact',leader:false,r20:20,scanner_eligible:false,analysis_available:true,eligibility_reason:'below liquidity requirement'};
+Object.assign(base,{score_version:'review-priority-v1-shadow',priority_rank:1,priority_denominator:1,priority_score:76,strength_rank:1,strength_denominator:3,strength_score:84,score_positives:['efficient trend'],score_concerns:['extension risk']});
+const other={...base,isin:'INE000000002',symbol:'OTHER',name:'Other Test Company',candidate:false,setup:'Other',stage:'Trend intact',leader:false,scanner_eligible:true,analysis_available:true,priority_rank:null,priority_denominator:null,priority_score:null,priority_na_reason:'not a current confirmed candidate',strength_rank:2,strength_score:72};
+const context={...base,isin:'INE000000003',symbol:'THIN',name:'Thin Test Company',candidate:false,setup:'Other',stage:'Trend intact',leader:false,r20:20,scanner_eligible:false,analysis_available:true,eligibility_reason:'below liquidity requirement',priority_rank:null,priority_denominator:null,priority_score:null,priority_na_reason:'below liquidity requirement',strength_rank:3,strength_score:66};
 const snapshot={schema:1,model:'confirmed-v3-industry-rank',status:'ready',asof:'2026-09-18',snapshot_id:'test-snapshot',policy:{benchmark:'^CRSLDX',benchmark_name:'Nifty 500'},rows:[base,other],analysis_rows:[base,other,context],themes:[{name:'Test theme',taxonomy:'Curated theme',members:[base.isin,'INE000000002','INE000000003'],status:'Leading',rank:1,rank_change:1,r20:12,r60:20,breadth:80,breadth_change:10,vstop_bullish:75,resolved:2,total:3,coverage_quality:'Broad',rs20:10,rs60:15}],rotation:{leaders:['Test theme'],review:[]},summary:[],tracking:[],market:{benchmark:'Nifty 500',ticker:'^CRSLDX',r20:2,breadth:60,regime:'Bull'},coverage:{fresh:3,universe:3,analysed:3,eligible:2,reasons:{'below liquidity requirement':1}},excluded:[{isin:'INE000000003',symbol:'THIN',name:'Thin Test Company',sector:'Test industry',reason:'below liquidity requirement',analysis_available:true}]};
 async function boot(data=snapshot,chartDate=data.asof,research=null,chunked=false){
  const dom=new JSDOM(html,{url:'https://example.test/Stocks/',runScripts:'outside-only'}),w=dom.window;
@@ -18,12 +19,15 @@ async function boot(data=snapshot,chartDate=data.asof,research=null,chunked=fals
 }
 (async()=>{
  let {dom,w,d}=await boot();
+ assert.match(d.querySelector('thead').textContent,/Rank \/ score/);
  assert.equal(d.querySelectorAll('#stock-rows tr').length,1,'default only confirmed');
+ assert.match(d.querySelector('#stock-rows').textContent,/#1 of 1.*Fresh-entry priority · 76\/100.*Strength #1 of 3/s);
  d.querySelector('[data-watch]').click();assert.equal(JSON.parse(w.localStorage.getItem('stocks-workspace-v1'))[base.isin].watch,true);
  d.querySelector('[data-stock]').click();await new Promise(r=>setImmediate(r));
  assert.equal(d.querySelector('#stock-dialog').open,true);assert.ok(d.querySelector('#detail-chart svg'));
  assert.match(d.querySelector('#detail-content').textContent,/VStop 10×2/);
  assert.match(d.querySelector('#detail-content').textContent,/OBV MACD/);
+ assert.match(d.querySelector('.rank-panel').textContent,/Fresh-entry priority.*#1 of 1.*76\/100.*Descriptive strength.*#1 of 3.*84\/100/s);
  assert.match(d.querySelector('#detail-content').textContent,/requires VStop and OBV MACD to both be bearish/);
  assert.match(d.querySelector('#detail-content').textContent,/Volume 5D\/30D: 2.25×/);
  assert.match(d.querySelector('#detail-content').textContent,/1.4% of live market cap/);
