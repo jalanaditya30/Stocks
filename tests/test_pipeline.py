@@ -68,6 +68,12 @@ class ConfirmationTests(unittest.TestCase):
         row,reason=analyze(META,self.d.drop(self.d.index[-8]),self.b,self.asof,CFG)
         self.assertIsNone(row);self.assertEqual(reason,'recent sessions missing')
 
+    def test_context_analysis_survives_missing_session_without_becoming_signal(self):
+        row,reason=analyze(META,self.d.drop(self.d.index[-8]),self.b,self.asof,CFG,context=True)
+        self.assertEqual(reason,'recent sessions missing')
+        self.assertFalse(row['scanner_eligible']);self.assertFalse(row['candidate'])
+        self.assertTrue(row['analysis_available']);self.assertIsNotNone(row['vstop'])
+
     def test_cash_turnover_not_dividend_adjusted(self):
         self.raw['Adj Close']=self.raw.Close*.5
         d=normalized(self.raw,self.asof)
@@ -203,6 +209,8 @@ class PublicationAndTrackingTests(unittest.TestCase):
         payload,charts,ledger=build([META],self.frames,self.asof,CFG,[],[])
         json.dumps([payload,charts,ledger],allow_nan=False)
         self.assertEqual(payload['coverage']['eligible'],1)
+        self.assertEqual(payload['coverage']['analysed'],1)
+        self.assertEqual(len(payload['analysis_rows']),1)
         self.assertEqual(payload['snapshot_id'],charts['snapshot_id'])
         self.assertEqual(charts['model'],CFG['version'])
         dates=charts['charts'][META['isin']]['dates']

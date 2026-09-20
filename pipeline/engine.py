@@ -210,24 +210,41 @@ def crossed_and_held(d, window, cfg, continuation=False):
     return None
 
 
-def analyze(meta, d, benchmark, asof, cfg):
-    if d is None or len(d) < cfg['min_history']:
+def analyze(meta, d, benchmark, asof, cfg, context=False):
+    """Analyse a stock, optionally retaining descriptive context outside the scanner.
+
+    Scanner eligibility remains strict. Context mode only keeps technical and
+    volume measurements for display; it can never create a candidate signal.
+    """
+    if d is None or len(d) < (65 if context else cfg['min_history']):
         return None, 'insufficient valid history'
+    exclusion_reason = None
+    if len(d) < cfg['min_history']:
+        exclusion_reason = 'insufficient valid history'
     if str(d.index[-1].date()) != asof:
-        return None, 'latest session missing'
+        if not context:
+            return None, 'latest session missing'
+        exclusion_reason = exclusion_reason or 'latest session missing'
     # Require identical dates for comparative features and a complete recent
     # trading calendar; missing or suspended sessions are not fresh evidence.
     required = benchmark.index[-cfg['min_history']:]
     if not required.isin(d.index).all():
-        return None, 'recent sessions missing'
+        if not context:
+            return None, 'recent sessions missing'
+        exclusion_reason = exclusion_reason or 'recent sessions missing'
     d = d.loc[d.index.intersection(benchmark.index)]
+    if len(d) < 65:
+        return None, exclusion_reason or 'insufficient comparable history'
     b = benchmark.reindex(d.index)
     c, h, l = (d[k].to_numpy(float) for k in ['Close','High','Low'])
     cash = d.CashTurnover.to_numpy(float)
     turn = float(np.median(cash[-60:]))
     nonzero = int(np.sum(d.Volume.to_numpy()[-60:] > 0))
     if turn < cfg['min_turnover_cr'] or nonzero < 55:
-        return None, 'below liquidity requirement'
+        if not context:
+            return None, 'below liquidity requirement'
+        exclusion_reason = exclusion_reason or 'below liquidity requirement'
+    scanner_eligible = exclusion_reason is None
     r5, r20, r60 = (pct(c, n) for n in [5,20,60])
     bc = b.Close.to_numpy(float)
     rs20, rs60 = r20-pct(bc,20), r60-pct(bc,60)
@@ -260,7 +277,7 @@ def analyze(meta, d, benchmark, asof, cfg):
                 (c[-1]/sma20-1)*100>cfg['max_sma_extension_pct'] or
                 (extension is not None and extension>cfg['max_extension_pct']))
     event = largest>cfg['event_day_pct']
-    candidate = bool(anchor and technical_ok and participation_ok and not extended and not event)
+    candidate = bool(scanner_eligible and anchor and technical_ok and participation_ok and not extended and not event)
     checks={'VStop bullish':ind['vstop_bullish'],'OBV MACD bullish':ind['obv_bullish'],
             'Directional trend':ind['adx']>=20 and ind['plus_di']>ind['minus_di'],
             'Efficient advance':ind['efficiency_20']>=.25}
@@ -292,6 +309,8 @@ def analyze(meta, d, benchmark, asof, cfg):
     up_volume_share=100*up_volume/directional_total if directional_total else None
     row = {'isin':meta['isin'],'symbol':meta['nse'],'yahoo':meta['yahoo'],
            'name':meta['name'],'sector':meta['industry_group'],'asof':asof,
+           'price_asof':str(d.index[-1].date()),'analysis_available':True,
+           'scanner_eligible':scanner_eligible,'eligibility_reason':exclusion_reason,
            'last':round(float(c[-1]/raw_factor),2),'r5':round(r5,2),'r20':round(r20,2),
            'r60':round(r60,2),'rs20':round(rs20,2),'rs60':round(rs60,2),
            'turnover_cr':round(turn,2),'participation':round(participation,2),
@@ -317,7 +336,7 @@ def analyze(meta, d, benchmark, asof, cfg):
            'breakout_date':anchor['breakout_date'] if anchor else None,
            'extension':round(extension,2) if extension is not None else None,
            'reasons':reasons,'risks':risks,'leader':False}
-    return row, None
+    return row, exclusion_reason
 
 
 def theme_summary(rows, members, name, taxonomy):

@@ -10,6 +10,7 @@ A daily Indian-equity research workspace for **confirmed moves** and **leaders r
 - Visible VStop, OBV MACD, ADX/DI and Efficiency Ratio checks that describe whether a confirmed move still has technical support.
 - Established long-term momentum leaders as a separate context view.
 - Interactive candlestick/volume charts from 1 January with OHLCV crosshairs, VStop, breakout and first-detection markers, plus dense two-column chart scans for watchlists and theme/industry groups.
+- Context-only technical and volume analysis for registered stocks with usable history, while strict continuity/liquidity rules remain mandatory for scanner signals and research evidence.
 - Sortable volume 5D/30D and 20-day turnover/market-cap context alongside the existing cash-turnover confirmation.
 - Browser-local saved and uploaded-symbol watchlists, review/dismiss decisions, notes, and export/import. Uploaded lists analyse configured `NSE:` symbols; BSE-only tokens are retained and disclosed as unsupported rather than misidentified. Lists do not leave the browser.
 - Immutable first daily snapshots, a detection ledger, and prospective 5/10/20/40-session outcomes.

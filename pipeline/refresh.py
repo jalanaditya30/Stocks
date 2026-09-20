@@ -306,13 +306,18 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     fresh=sum(r['yahoo'] in frames and str(frames[r['yahoo']].index[-1].date())==asof for r in universe)
     if fresh/len(universe)<cfg['min_coverage']:
         raise RuntimeError(f'Fresh coverage {fresh}/{len(universe)} is below the {cfg["min_coverage"]:.0%} publishing requirement')
-    rows,excluded=[],[]
+    rows,analysis_rows,excluded=[],[],[]
     for meta in universe:
-        row,reason=analyze(meta,frames.get(meta['yahoo']),benchmark,asof,cfg)
-        if row: rows.append(row)
-        else: excluded.append({'isin':meta['isin'],'symbol':meta['nse'],'name':meta['name'],
-                               'sector':meta['industry_group'],'industry':meta.get('industry'),
-                               'yahoo':meta['yahoo'],'reason':reason})
+        row,reason=analyze(meta,frames.get(meta['yahoo']),benchmark,asof,cfg,context=True)
+        if row:
+            analysis_rows.append(row)
+        if row and row['scanner_eligible']:
+            rows.append(row)
+        else:
+            excluded.append({'isin':meta['isin'],'symbol':meta['nse'],'name':meta['name'],
+                             'sector':meta['industry_group'],'industry':meta.get('industry'),
+                             'yahoo':meta['yahoo'],'reason':reason,
+                             'analysis_available':row is not None})
     leaders=sorted([r for r in rows if r['momentum_12_1'] is not None],key=lambda r:-r['momentum_12_1'])
     for r in leaders[:max(1,int(np.ceil(len(leaders)*.1)))]:r['leader']=True
     groups=defaultdict(set)
@@ -320,7 +325,7 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     theme_rows=[theme_summary(rows,ids,name,'Industry') for name,ids in groups.items()]
     theme_rows += [theme_summary(rows,set(t['members']),t['name'],'Curated theme') for t in themes]
     theme_rows=rank_themes(theme_rows,previous_themes,preserve_rank_comparison)
-    attach_rotation_context(rows,theme_rows)
+    attach_rotation_context(analysis_rows,theme_rows)
     posture={'Sector-supported setup':0,'Hold / monitor':1,'Watch':2,'Sector review':3,'Exit review':4}
     rows.sort(key=lambda r:(not r['candidate'],-(r['stock_vs_industry_r20'] if r['stock_vs_industry_r20'] is not None else -999),-r['participation'],
                             posture[r['rotation_posture']],r['isin']))
@@ -360,9 +365,11 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     payload={'schema':1,'model':cfg['version'],'asof':asof,'snapshot_id':snapshot_id,
         'generated':generated,'status':'ready','source':'Yahoo Finance / yfinance; completed daily bars',
         'research_status':'New descriptive rules; prospective evidence accumulating. No claimed win probability.',
-        'policy':cfg,'market':market,'coverage':{'universe':len(universe),'fresh':fresh,'eligible':len(rows),
+        'policy':cfg,'market':market,'coverage':{'universe':len(universe),'fresh':fresh,
+             'analysed':len(analysis_rows),'eligible':len(rows),
              'excluded':len(excluded),'reasons':dict(Counter(x['reason'] for x in excluded))},
-        'rows':rows,'themes':theme_rows,'rotation':rotation,'tracking':tracking,'summary':summary,'excluded':excluded,
+        'rows':rows,'analysis_rows':analysis_rows,'themes':theme_rows,'rotation':rotation,
+        'tracking':tracking,'summary':summary,'excluded':excluded,
         'surveillance':'Not automatically screened for ASM/GSM or price bands; verify on NSE before acting.'}
     return payload,{'schema':1,'model':cfg['version'],'asof':asof,
                     'snapshot_id':snapshot_id,'charts':charts},ledger
