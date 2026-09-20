@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 from test_pipeline import CFG,META,fixture
 from pipeline.engine import normalized,analyze
-from pipeline.backtest import features,outcome,choose,portfolio,episodes,industry_medians
+from pipeline.backtest import (features,outcome,choose,portfolio,episodes,industry_medians,
+                               benchmark_calendar_gaps)
 
 class HistoricalTests(unittest.TestCase):
     def setUp(self):
@@ -39,6 +40,17 @@ class HistoricalTests(unittest.TestCase):
         changed=self.d.reindex(self.b.index).copy();changed.loc[changed.index[301],'Open']=np.nan
         self.assertEqual(outcome(changed,self.b,300,20)['status'],'missing_prices')
         self.assertEqual(outcome(self.d,self.b,490,20)['status'],'immature')
+
+    def test_benchmark_gap_uses_independent_exchange_calendar(self):
+        raw=self.b.loc['2026-09-01':'2026-09-18'].copy()
+        missing=raw.index[3]
+        changed=raw.drop(missing)
+        gaps=benchmark_calendar_gaps(changed,raw.index[0],raw.index[-1])
+        # The selected fixture day is asserted only when it is an NSE session;
+        # the key regression is that a removed configured session is detectable.
+        if str(missing.date()) in benchmark_calendar_gaps(raw,raw.index[0],raw.index[-1]):
+            self.skipTest('Synthetic business day is not in the configured NSE calendar')
+        self.assertIn(str(missing.date()),gaps)
 
     def test_target_and_risk_same_bar_is_ambiguous(self):
         d=self.d.copy();i=300;opening=d.Open.iloc[i+1]

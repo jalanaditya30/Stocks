@@ -10,12 +10,20 @@ import csv
 import numpy as np
 import pandas as pd
 
-from pipeline.refresh import ROOT, fetch, read, write, expected_session
+from pipeline.refresh import ROOT, fetch, read, write, expected_session, provenance
 from pipeline.engine import vstop_series, obv_macd_series
+from pipeline.calendar import exchange_sessions
 
 BENCH='^CRSLDX'
 HORIZONS=[5,10,20,40,60]
 VARIANTS=['baseline','no_chase','market_trend','combined']
+
+
+def benchmark_calendar_gaps(raw, start, end):
+    """Detect absences against the independent configured exchange calendar."""
+    sessions=exchange_sessions(start,end)
+    return [str(x.date()) for x in sessions if x not in raw.index or
+            pd.isna(raw.loc[x,'Close'])]
 
 
 def features(d,b,cfg):
@@ -301,10 +309,11 @@ def run():
         manifests.append({'ticker':t,'rows':len(d),'first':str(d.index[0].date()),'last':str(d.index[-1].date()),'sha256':hashlib.sha256(target.read_bytes()).hexdigest()})
     write(cache/'manifest.json',manifests)
     if BENCH not in frames:raise RuntimeError('Nifty 500 history is required; no substitute index used')
-    b=frames[BENCH];mid=b
-    end=min(b.index[-1],mid.index[-1]);start=end-pd.DateOffset(years=5)
-    b=b.loc[:end];mid=mid.reindex(b.index)
-    benchmark_gaps=[str(x.date()) for x in mid.loc[start:end].index[mid.loc[start:end,'Close'].isna()]]
+    raw_benchmark=frames[BENCH]
+    calendar=exchange_sessions(raw_benchmark.index[0],raw_benchmark.index[-1])
+    b=raw_benchmark.reindex(calendar);mid=b
+    end=b.index[-1];start=end-pd.DateOffset(years=5)
+    benchmark_gaps=benchmark_calendar_gaps(raw_benchmark,start,end)
     print('Benchmark missing sessions:',benchmark_gaps,flush=True)
     if b.index[0]>start-pd.DateOffset(years=1) or mid.Close.first_valid_index()>start-pd.DateOffset(years=1):
         raise RuntimeError('Benchmark history does not cover five years plus one warmup year')
@@ -341,6 +350,8 @@ def run():
     hold=variants[chosen]['holdout'];ci=hold.get('excess_ci95');p=ports[chosen]['holdout']
     supported=bool(hold.get('n',0)>=100 and ci and ci[0]>0 and p and p['cagr']>p['benchmark_cagr_yield_adjusted'])
     report={'schema':1,'status':'complete','model':cfg['version'],'generated':datetime.now(timezone.utc).isoformat(),
+        'provenance':{**provenance(cfg),'input_manifest_sha256':hashlib.sha256(json.dumps(manifests,sort_keys=True).encode()).hexdigest()},
+        'ranking_evidence':{'status':'not_run','reason':'The new shadow score requires a fresh chronological replay; the previously inspected holdout is not reused as untouched validation.'},
         'benchmark':{'name':'Nifty 500','ticker':BENCH,'type':'price index','dividend_sensitivity':'Additional 2% annual benchmark yield; not an official TRI'},
         'ranges':ranges,'selected_variant':chosen,'holdout_supports_candidate':supported,
         'selection':{'stock_qualification':'absolute price trend and confirmed move',

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse
 import csv
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,8 @@ import pandas_market_calendars as mcal
 import yfinance as yf
 
 from pipeline.engine import normalized, analyze, theme_summary, vstop_series, pct
+from pipeline.calendar import calendar_metadata, exchange_sessions, recent_sessions
+from pipeline.ranking import SCORE_VERSION, score_rows
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT/'data'
@@ -45,11 +48,19 @@ def expected_session(now=None):
     return str(closed.index[-1].date())
 
 
-def fetch(tickers, asof, require_current=True, period='2y'):
+def fetch(tickers, asof, require_current=True, period='2y', required_dates=None):
     out = {}
-    # Small batches, a single shared pull, and one retry for missing symbols.
+    required_dates = pd.DatetimeIndex([] if required_dates is None else required_dates)
+    def complete(d):
+        return (d is not None and str(d.index[-1].date()) == asof
+                and (not len(required_dates) or required_dates.isin(d.index).all()))
+    def quality(d):
+        return (int(required_dates.isin(d.index).sum()) if len(required_dates) else 0,
+                int(str(d.index[-1].date()) == asof), len(d))
+    # Small batches, a shared pull, and one targeted retry for stale or internally
+    # incomplete histories. Revisions are never spliced across downloads.
     for attempt in range(2):
-        pending = [t for t in tickers if t not in out or str(out[t].index[-1].date())!=asof]
+        pending = [t for t in tickers if t not in out or not complete(out[t])]
         for start in range(0,len(pending),30):
             chunk = pending[start:start+30]
             print(f"fetch pass {attempt+1}: {start+1}-{start+len(chunk)}/{len(pending)}",flush=True)
@@ -60,8 +71,8 @@ def fetch(tickers, asof, require_current=True, period='2y'):
                     try:
                         frame = raw[t] if isinstance(raw.columns,pd.MultiIndex) else raw
                         d = normalized(frame,asof)
-                        if d is not None and (not require_current or str(d.index[-1].date())==asof):
-                            if t not in out or d.index[-1]>=out[t].index[-1]:
+                        if d is not None and (not require_current or str(d.index[-1].date()) == asof):
+                            if t not in out or quality(d) > quality(out[t]):
                                 out[t]=d
                         else:
                             raw_latest=str(frame.index[-1]) if not frame.empty else 'empty'
@@ -75,11 +86,98 @@ def fetch(tickers, asof, require_current=True, period='2y'):
             except Exception as exc:
                 print('batch unavailable:',type(exc).__name__,flush=True)
             time.sleep(1)
-        if all(t in out and str(out[t].index[-1].date())==asof for t in tickers):
+        if all(t in out and complete(out[t]) for t in tickers):
             break
         if attempt==0:
             time.sleep(5)
     return out
+
+
+def completeness_report(universe, frames, required, asof):
+    """Explicit continuity diagnostics; never converts missing bars to prices."""
+    required = pd.DatetimeIndex(required)
+    by_date = Counter()
+    symbols = []
+    fresh = history_complete = 0
+    for meta in universe:
+        d = frames.get(meta['yahoo'])
+        if d is None or d.empty:
+            missing = [str(x.date()) for x in required]
+            state = 'unavailable'
+        else:
+            if str(d.index[-1].date()) == asof:
+                fresh += 1
+            missing = [str(x.date()) for x in required if x not in d.index]
+            if not missing:
+                history_complete += 1
+                state = 'complete'
+            elif d.index[0] > required[0]:
+                state = 'insufficient history / possible recent listing'
+            else:
+                state = 'suspected provider or trading-status gap'
+        for day in missing:
+            by_date[day] += 1
+        if missing:
+            symbols.append({'isin':meta['isin'],'symbol':meta['nse'],'state':state,
+                            'missing_dates':missing})
+    concentration = max(by_date.values(), default=0)
+    degraded = bool(universe and concentration / len(universe) >= .10)
+    return {'calendar':calendar_metadata(),'window_sessions':len(required),
+            'window_start':str(required[0].date()) if len(required) else None,
+            'window_end':str(required[-1].date()) if len(required) else None,
+            'fresh':fresh,'history_complete':history_complete,
+            'missing_by_date':dict(sorted(by_date.items())),
+            'symbols_with_gaps':symbols,'state':'degraded' if degraded else 'ok',
+            'degraded_reason':('A single required session is missing for at least 10% of the registry.'
+                               if degraded else None)}
+
+
+def _sha256(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def provenance(cfg):
+    return {'code_revision':os.getenv('GITHUB_SHA') or 'working-tree',
+            'model_version':cfg['version'],'ranking_version':SCORE_VERSION,
+            'indicator_version':'technical-indicators-v1',
+            'calendar':calendar_metadata(),
+            'configuration_sha256':_sha256(ROOT/'config/model.json'),
+            'universe_sha256':_sha256(ROOT/'config/universe.csv'),
+            'engine_sha256':_sha256(ROOT/'pipeline/engine.py')}
+
+
+def publish_bundle(payload, charts, ledger, history_payload, health):
+    """Activate one immutable validated bundle before updating legacy aliases."""
+    if payload['snapshot_id'] != charts['snapshot_id'] or health['snapshot_id'] != payload['snapshot_id']:
+        raise RuntimeError('Snapshot bundle identifiers do not match')
+    token = hashlib.sha256(payload['snapshot_id'].encode()).hexdigest()[:20]
+    bundle = DATA/'snapshots'/token
+    write(bundle/'latest.json', payload)
+    buckets = defaultdict(dict)
+    chart_files = {}
+    for isin, series in charts.get('charts', {}).items():
+        bucket=f'{int(hashlib.sha256(isin.encode()).hexdigest()[:2],16)%64:02d}.json'
+        buckets[bucket][isin]=series
+        chart_files[isin]=bucket
+    for filename, series in buckets.items():
+        write(bundle/'charts'/filename,{'schema':1,'model':charts['model'],'asof':charts['asof'],
+              'snapshot_id':charts['snapshot_id'],'charts':series})
+    write(bundle/'charts'/'index.json',{'schema':1,'model':charts['model'],'asof':charts['asof'],
+          'snapshot_id':charts['snapshot_id'],'files':chart_files})
+    write(bundle/'ledger.json', ledger)
+    write(bundle/'health.json', health)
+    if history_payload is not None:
+        write(bundle/'history.json', history_payload)
+    manifest = {'schema':1,'snapshot_id':payload['snapshot_id'],'asof':payload['asof'],
+                'base':f'snapshots/{token}/','charts':'charts/index.json',
+                'activated_at':datetime.now(timezone.utc).isoformat()}
+    write(DATA/'current.json', manifest)
+    # Backward-compatible aliases are not the activation boundary.
+    write(DATA/'ledger.json', ledger)
+    write(DATA/'charts.json', charts)
+    write(DATA/'latest.json', payload)
+    write(DATA/'health.json', health)
+    return manifest
 
 
 def select_session(universe,frames,benchmark,expected,minimum,max_lag=3):
@@ -132,7 +230,12 @@ def track(ledger, rows, frames, benchmark, asof, cfg, record=True):
                     'momentum_checks':r.get('momentum_checks',[]),'vstop_bullish':r.get('vstop_bullish'),
                     'obv_bullish':r.get('obv_bullish'),'adx':r.get('adx'),
                     'efficiency_20':r.get('efficiency_20'),'theme_name':r.get('theme_name'),
-                    'theme_state':r.get('theme_state'),'rotation_posture':r.get('rotation_posture')})
+                    'theme_state':r.get('theme_state'),'rotation_posture':r.get('rotation_posture'),
+                    'score_version':r.get('score_version'),'first_strength_score':r.get('strength_score'),
+                    'first_strength_rank':r.get('strength_rank'),
+                    'first_priority_score':r.get('priority_score'),
+                    'first_priority_rank':r.get('priority_rank'),
+                    'first_priority_denominator':r.get('priority_denominator')})
                 known.add(key)
     result=[]
     calendar=benchmark.index
@@ -285,10 +388,10 @@ def attach_rotation_context(rows, themes):
         supportive=best and best['status'] in ['Leading','Emerging']
         weak=best and best['status'] in ['Weakening','Avoid']
         row['exit_review']=not row['vstop_bullish'] and not row['obv_bullish']
-        if row['candidate'] and supportive:
-            posture='Sector-supported setup'
-        elif row['exit_review']:
+        if row['exit_review']:
             posture='Exit review'
+        elif row['candidate'] and supportive:
+            posture='Sector-supported setup'
         elif row['vstop_bullish'] and row['obv_bullish'] and not weak:
             posture='Hold / monitor'
         elif weak:
@@ -299,11 +402,14 @@ def attach_rotation_context(rows, themes):
 
 
 def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=None,
-          preserve_rank_comparison=False):
+          preserve_rank_comparison=False,required_sessions=None,previous_rows=None):
     benchmark=frames.get(cfg['benchmark'])
     if benchmark is None or len(benchmark)<cfg['min_history'] or str(benchmark.index[-1].date())!=asof:
         raise RuntimeError('The benchmark does not have the expected completed session')
-    fresh=sum(r['yahoo'] in frames and str(frames[r['yahoo']].index[-1].date())==asof for r in universe)
+    required_sessions = pd.DatetimeIndex(required_sessions if required_sessions is not None
+                                         else benchmark.index[-cfg['min_history']:])
+    quality = completeness_report(universe,frames,required_sessions,asof)
+    fresh=quality['fresh']
     if fresh/len(universe)<cfg['min_coverage']:
         raise RuntimeError(f'Fresh coverage {fresh}/{len(universe)} is below the {cfg["min_coverage"]:.0%} publishing requirement')
     rows,analysis_rows,excluded=[],[],[]
@@ -326,6 +432,24 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     theme_rows += [theme_summary(rows,set(t['members']),t['name'],'Curated theme') for t in themes]
     theme_rows=rank_themes(theme_rows,previous_themes,preserve_rank_comparison)
     attach_rotation_context(analysis_rows,theme_rows)
+    score_rows(analysis_rows)
+    old={r.get('isin'):r for r in (previous_rows or [])}
+    for row in analysis_rows:
+        prior=old.get(row['isin'],{})
+        compatible=prior.get('score_version')==row.get('score_version')
+        if preserve_rank_comparison and compatible:
+            for field in ['previous_strength_rank','strength_rank_change','previous_priority_rank','priority_rank_change']:
+                row[field]=prior.get(field)
+        elif compatible:
+            row['previous_strength_rank']=prior.get('strength_rank')
+            row['strength_rank_change']=(prior['strength_rank']-row['strength_rank']
+                if prior.get('strength_rank') and row.get('strength_rank') else None)
+            row['previous_priority_rank']=prior.get('priority_rank')
+            row['priority_rank_change']=(prior['priority_rank']-row['priority_rank']
+                if prior.get('priority_rank') and row.get('priority_rank') else None)
+        else:
+            row['previous_strength_rank']=row['strength_rank_change']=None
+            row['previous_priority_rank']=row['priority_rank_change']=None
     posture={'Sector-supported setup':0,'Hold / monitor':1,'Watch':2,'Sector review':3,'Exit review':4}
     rows.sort(key=lambda r:(not r['candidate'],-(r['stock_vs_industry_r20'] if r['stock_vs_industry_r20'] is not None else -999),-r['participation'],
                             posture[r['rotation_posture']],r['isin']))
@@ -364,10 +488,15 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
     snapshot_id=f"{cfg['version']}:{asof}:{generated}"
     payload={'schema':1,'model':cfg['version'],'asof':asof,'snapshot_id':snapshot_id,
         'generated':generated,'status':'ready','source':'Yahoo Finance / yfinance; completed daily bars',
-        'research_status':'New descriptive rules; prospective evidence accumulating. No claimed win probability.',
+        'research_status':'Shadow ranking is a heuristic review order; prospective evidence is accumulating. No claimed win probability.',
+        'ranking_mode':'shadow','provenance':provenance(cfg),
         'policy':cfg,'market':market,'coverage':{'universe':len(universe),'fresh':fresh,
+             'history_complete':quality['history_complete'],
+             'liquidity_pass':sum(bool(r.get('liquidity_ok')) for r in analysis_rows),
+             'quality_state':quality['state'],
              'analysed':len(analysis_rows),'eligible':len(rows),
              'excluded':len(excluded),'reasons':dict(Counter(x['reason'] for x in excluded))},
+        'data_quality':quality,
         'rows':rows,'analysis_rows':analysis_rows,'themes':theme_rows,'rotation':rotation,
         'tracking':tracking,'summary':summary,'excluded':excluded,
         'surveillance':'Not automatically screened for ASM/GSM or price bands; verify on NSE before acting.'}
@@ -382,14 +511,15 @@ def main():
     if len({r['isin'] for r in universe})!=len(universe):raise RuntimeError('Duplicate ISINs in registry')
     if args.limit:universe=universe[:args.limit]
     expected=expected_session()
+    required=recent_sessions(expected,cfg['min_history'])
     asof=expected
     history=DATA/'history'/cfg['version']/f'{asof}.json'
     ledger=read(DATA/'ledger.json',[])
     # Benchmark first: abort before thousands of calls if the provider is down.
-    frames=fetch([cfg['benchmark']],asof,require_current=False)
+    frames=fetch([cfg['benchmark']],asof,require_current=False,required_dates=required)
     if cfg['benchmark'] not in frames:raise RuntimeError('Benchmark unavailable; prior snapshot preserved')
     tickers=list(dict.fromkeys([r['yahoo'] for r in universe]+[r['yahoo'] for r in ledger]))
-    frames.update(fetch(tickers,asof,require_current=False))
+    frames.update(fetch(tickers,asof,require_current=False,required_dates=required))
     asof=select_session(universe,frames,frames[cfg['benchmark']],expected,cfg['min_coverage'])
     history=DATA/'history'/cfg['version']/f'{asof}.json'
     frames={t:d.loc[:asof] for t,d in frames.items() if not d.loc[:asof].empty}
@@ -399,7 +529,8 @@ def main():
     current=asof==expected
     payload,charts,ledger=build(universe,frames,asof,cfg,read(ROOT/'config/themes.json',[]),ledger,
                                 current and not history.exists(),previous.get('themes',[]),
-                                previous.get('asof')==asof and previous.get('model')==cfg['version'])
+                                previous.get('asof')==asof and previous.get('model')==cfg['version'],required,
+                                previous.get('analysis_rows',[]))
     payload['expected_session']=expected
     payload['freshness']='current' if current else 'delayed'
     if args.limit:
@@ -407,17 +538,21 @@ def main():
         write(ROOT/'tmp/limited-scan.json',payload)
         return
     # A first successful daily snapshot is immutable, including a model version.
+    history_payload=None
     if current and not history.exists():
-        write(history,{'asof':asof,'model':cfg['version'],'generated':payload['generated'],
-                       'candidates':[r for r in payload['rows'] if r['candidate']],
-                       'themes':payload['themes'],'coverage':payload['coverage']})
-    write(DATA/'ledger.json',ledger)
-    write(DATA/'charts.json',charts)
-    write(DATA/'latest.json',payload)
-    write(DATA/'health.json',{'status':'ok' if current else 'delayed','asof':asof,
+        history_payload={'asof':asof,'model':cfg['version'],'generated':payload['generated'],
+                         'provenance':payload['provenance'],
+                         'candidates':[r for r in payload['rows'] if r['candidate']],
+                         'themes':payload['themes'],'coverage':payload['coverage']}
+    health={'status':'degraded' if payload['coverage']['quality_state']=='degraded' else ('ok' if current else 'delayed'),'asof':asof,
         'expected_session':expected,'snapshot_id':payload['snapshot_id'],'message':None if current else
         f'Provider coverage is incomplete for {expected}. Showing the common completed session {asof}; no new live detections recorded.',
-        'checked_at':datetime.now(timezone.utc).isoformat()})
+        'checked_at':datetime.now(timezone.utc).isoformat()}
+    if health['status']=='degraded':
+        health['message']=payload['data_quality']['degraded_reason']
+    publish_bundle(payload,charts,ledger,history_payload,health)
+    if history_payload is not None:
+        write(history,history_payload)
     print(f"Published {asof}: {len(payload['rows'])} eligible, {sum(r['candidate'] for r in payload['rows'])} confirmed setups",flush=True)
 
 

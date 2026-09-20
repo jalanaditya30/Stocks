@@ -1,12 +1,16 @@
 import copy
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
 from pipeline.engine import normalized, analyze, crossed_and_held, live_market_cap, theme_summary
-from pipeline.refresh import build, track, expected_session, replacing_newer_same_model, select_session
+from pipeline.refresh import (build, track, expected_session, replacing_newer_same_model,
+                              select_session, completeness_report, fetch)
+from pipeline.refresh import publish_bundle
 
 CFG=json.loads((Path(__file__).resolve().parents[1]/'config/model.json').read_text())
 META={'isin':'INE000000001','nse':'TEST','yahoo':'TEST.NS','name':'Test company','industry_group':'Test industry',
@@ -231,6 +235,35 @@ class PublicationAndTrackingTests(unittest.TestCase):
     def test_weekend_and_intraday_use_completed_session(self):
         self.assertEqual(expected_session('2026-09-19T12:00:00Z'),'2026-09-18')
         self.assertEqual(expected_session('2026-09-18T09:00:00Z'),'2026-09-17')
+
+    def test_completeness_report_exposes_concentrated_internal_gap(self):
+        required=self.frames[CFG['benchmark']].index[-10:]
+        frames={**self.frames,'TEST.NS':self.frames['TEST.NS'].drop(required[-2])}
+        report=completeness_report([META],frames,required,self.asof)
+        self.assertEqual(report['state'],'degraded')
+        self.assertEqual(report['history_complete'],0)
+        self.assertEqual(report['missing_by_date'][str(required[-2].date())],1)
+        self.assertEqual(report['symbols_with_gaps'][0]['symbol'],'TEST')
+
+    def test_fetch_retries_current_history_with_internal_gap(self):
+        complete,_,_=fixture();missing=complete.drop(complete.index[-2])
+        with patch('pipeline.refresh.yf.download',side_effect=[missing,complete]) as download, \
+             patch('pipeline.refresh.time.sleep'):
+            result=fetch(['TEST.NS'],self.asof,require_current=False,
+                         required_dates=complete.index[-10:])
+        self.assertEqual(download.call_count,2)
+        self.assertIn(complete.index[-2],result['TEST.NS'].index)
+
+    def test_bundle_activation_uses_immutable_chunked_charts(self):
+        payload,charts,ledger=build([META],self.frames,self.asof,CFG,[],[])
+        health={'status':'ok','snapshot_id':payload['snapshot_id']}
+        with TemporaryDirectory() as tmp, patch('pipeline.refresh.DATA',Path(tmp)):
+            manifest=publish_bundle(payload,charts,ledger,None,health)
+            active=json.loads((Path(tmp)/'current.json').read_text())
+            self.assertEqual(active['snapshot_id'],payload['snapshot_id'])
+            index=json.loads((Path(tmp)/manifest['base']/manifest['charts']).read_text())
+            self.assertIn(META['isin'],index['files'])
+            self.assertFalse((Path(tmp)/manifest['base']/'charts.json').exists())
 
 
 if __name__=='__main__':unittest.main()

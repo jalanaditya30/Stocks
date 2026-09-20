@@ -121,6 +121,17 @@ class RotationTests(unittest.TestCase):
         self.assertEqual(other['theme_name'],'Test industry')
         self.assertEqual(other['theme_taxonomy'],'Industry')
 
+    def test_dual_negative_review_dominates_supportive_theme(self):
+        row={**self.row('1',7,8),'sector':'Test industry','candidate':True,
+             'vstop_bullish':False,'obv_bullish':False}
+        themes=[{'taxonomy':'Curated theme','name':'Theme A','members':['1'],'status':'Leading','rank':1,
+                 'coverage':100,'coverage_quality':'Broad','breadth_change':5,'r20':5,'r60':7,'rs20':4},
+                {'taxonomy':'Industry','name':'Test industry','members':['1','2','3'],'resolved':3,'status':'Leading','rank':1,
+                 'coverage':100,'coverage_quality':'Broad','breadth_change':5,'r20':3,'r60':6,'rs20':2}]
+        attach_rotation_context([row],themes)
+        self.assertTrue(row['exit_review'])
+        self.assertEqual(row['rotation_posture'],'Exit review')
+
     def test_exit_review_requires_both_stock_indicators_bearish(self):
         themes=[{'taxonomy':'Industry','name':'Test industry','members':['1','2','3'],'resolved':3,
                  'status':'Mixed','rank':1,'coverage':100,'coverage_quality':'Broad',

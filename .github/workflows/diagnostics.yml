@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['pipeline/diagnose.py', '.github/workflows/diagnostics.yml']
+    paths: ['pipeline/diagnose.py', 'pipeline/calendar.py', 'config/exchange_calendar_overrides.json', 'requirements.txt', '.github/workflows/diagnostics.yml']
 permissions: {contents: read}
 jobs:
   inspect:
