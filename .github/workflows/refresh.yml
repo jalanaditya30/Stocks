@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['pipeline/engine.py', 'pipeline/refresh.py', 'pipeline/ranking.py', 'pipeline/calendar.py', 'config/**', 'tests/**', 'requirements.txt', '.github/workflows/refresh.yml']
+    paths: ['pipeline/engine.py', 'pipeline/refresh.py', 'pipeline/ranking.py', 'pipeline/calendar.py', 'pipeline/nse_bhavcopy.py', 'config/**', 'tests/**', 'requirements.txt', '.github/workflows/refresh.yml']
   schedule:
     - cron: '5 13 * * 1-5' # 18:35 IST; completed bars with publication allowance
 permissions:

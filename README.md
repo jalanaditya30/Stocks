@@ -16,6 +16,7 @@ A daily Indian-equity research workspace for **confirmed moves** and **leaders r
 - Immutable first daily snapshots, a detection ledger, and prospective 5/10/20/40-session outcomes.
 - A visible refresh-health state. Failed or incomplete refreshes preserve the last successful snapshot.
 - Per-session continuity diagnostics and targeted retries for internal price-history gaps.
+- Automatic repair of concentrated Yahoo session gaps from the official NSE CM-UDiFF Common Bhavcopy, matched by ISIN and adjustment-validated before use.
 - A transparent strength and fresh-entry review ranking in shadow mode; it does not change qualification.
 
 The initial thresholds are **new research hypotheses**, not validated trading signals. They do not revive the retired R2/R5 strategies. The four support checks describe confirmed moves but do not admit pre-breakout stocks, form a combined score or claim remaining upside. A confirmed price move can fail. See [the full specification](docs/METHODOLOGY.md).
@@ -71,7 +72,7 @@ The repository and market data are public. Your watchlist and notes are saved on
 
 ## Maintenance and provenance
 
-Every live snapshot records the code revision, model/ranking/indicator versions, calendar version, configuration hash and universe hash. Historical evidence must match those calculation inputs before the UI treats it as compatible. The versioned exchange calendar uses `pandas_market_calendars` plus reviewed overrides in `config/exchange_calendar_overrides.json`; missing benchmark bars are checked against that independent session list rather than the benchmark's own dates.
+Every live snapshot records the code revision, model/ranking/indicator/data-source versions, calendar version, configuration hash, universe hash and session-repair code hash. Historical evidence must match those calculation inputs before the UI treats it as compatible. The versioned exchange calendar uses `pandas_market_calendars` plus reviewed overrides in `config/exchange_calendar_overrides.json`; missing benchmark bars are checked against that independent session list rather than the benchmark's own dates. Yahoo remains the bulk history source. When at least 10% of the registry shares an internal missing session, the refresh attempts an official NSE UDiFF Bhavcopy repair. It inserts only absent bars, matches by ISIN, validates OHLC/volume and requires consistent surrounding adjustment factors. An unresolved concentrated gap aborts activation and retains the previous snapshot.
 
 See [the frozen shadow-ranking specification](docs/RANKING_SPEC.md). Strength is descriptive across comparable analysed stocks. Fresh-entry priority is limited to current confirmed eligible candidates, and can legitimately contain fewer than ten names or none. N/A inputs are never converted to zero. The existing ordering remains the default while forward evidence accumulates.
 
