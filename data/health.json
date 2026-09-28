@@ -1,1 +1,1 @@
-{"status":"degraded","asof":"2026-09-28","expected_session":"2026-09-28","snapshot_id":"confirmed-v3-industry-rank:2026-09-28:2026-09-28T13:08:30.282342+00:00","message":"A single required session is missing for at least 10% of the registry.","checked_at":"2026-09-28T13:08:30.283795+00:00"}
+{"status":"error","checked_at":"2026-09-28T20:13:33.303286+00:00","message":"Refusing to replace a newer snapshot of the same model","note":"Previous successful snapshot retained."}
