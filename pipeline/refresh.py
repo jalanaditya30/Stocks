@@ -538,6 +538,9 @@ def main():
     asof=select_session(universe,frames,frames[cfg['benchmark']],expected,cfg['min_coverage'])
     history=DATA/'history'/cfg['version']/f'{asof}.json'
     frames={t:d.loc[:asof] for t,d in frames.items() if not d.loc[:asof].empty}
+    # Judge continuity over the published window; a later session the scan fell
+    # back from is reported as delayed freshness, not as a gap in every history.
+    required=recent_sessions(asof,cfg['min_history'])
     previous=read(DATA/'latest.json',{})
     if replacing_newer_same_model(previous,asof,cfg):
         raise RuntimeError('Refusing to replace a newer snapshot of the same model')

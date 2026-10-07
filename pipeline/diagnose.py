@@ -26,3 +26,11 @@ for t in batch[:4]:
     d=normalized(frame,asof)
     print(t,'refresh-shaped valid latest',str(d.index[-1].date()) if d is not None else None,flush=True)
     print(frame.tail(3).to_json(orient='table'),flush=True)
+# Official NSE archives used to fill a session Yahoo has not yet published.
+from pipeline.nse_bhavcopy import download_bhavcopy, download_index_close
+for name,load in [('bhavcopy',download_bhavcopy),('index close',lambda d:download_index_close(d,'Nifty 500'))]:
+    try:
+        result=load(asof)
+        print('NSE',name,asof,'rows' if name=='bhavcopy' else 'bar',len(result) if name=='bhavcopy' else result,flush=True)
+    except Exception as exc:
+        print('NSE',name,asof,'unavailable:',type(exc).__name__,exc,flush=True)
