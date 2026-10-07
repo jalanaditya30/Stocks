@@ -18,3 +18,11 @@ for t in ['^CRSLDX','RELIANCE.NS','TCS.NS','DISHTV.NS']:
         valid_calendar=set(exchange_sessions(d.index[0],d.index[-1]))
         print(t,'provider dates outside configured calendar',[str(x.date()) for x in d.index if x not in valid_calendar],flush=True)
     print(frame.tail(5).to_json(orient='table'),flush=True)
+# Same request shape as the refresh: a 30-ticker batch with a two-year period.
+batch=['^CRSLDX','RELIANCE.NS','TCS.NS','DISHTV.NS']+[r['yahoo'] for r in __import__('csv').DictReader(open('config/universe.csv'))][:26]
+raw=yf.download(batch,period='2y',auto_adjust=False,group_by='ticker',progress=False,threads=4,timeout=20)
+for t in batch[:4]:
+    frame=raw[t]
+    d=normalized(frame,asof)
+    print(t,'refresh-shaped valid latest',str(d.index[-1].date()) if d is not None else None,flush=True)
+    print(frame.tail(3).to_json(orient='table'),flush=True)
