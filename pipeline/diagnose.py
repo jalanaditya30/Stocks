@@ -18,3 +18,19 @@ for t in ['^CRSLDX','RELIANCE.NS','TCS.NS','DISHTV.NS']:
         valid_calendar=set(exchange_sessions(d.index[0],d.index[-1]))
         print(t,'provider dates outside configured calendar',[str(x.date()) for x in d.index if x not in valid_calendar],flush=True)
     print(frame.tail(5).to_json(orient='table'),flush=True)
+# Same request shape as the refresh: a 30-ticker batch with a two-year period.
+batch=['^CRSLDX','RELIANCE.NS','TCS.NS','DISHTV.NS']+[r['yahoo'] for r in __import__('csv').DictReader(open('config/universe.csv'))][:26]
+raw=yf.download(batch,period='2y',auto_adjust=False,group_by='ticker',progress=False,threads=4,timeout=20)
+for t in batch[:4]:
+    frame=raw[t]
+    d=normalized(frame,asof)
+    print(t,'refresh-shaped valid latest',str(d.index[-1].date()) if d is not None else None,flush=True)
+    print(frame.tail(3).to_json(orient='table'),flush=True)
+# Official NSE archives used to fill a session Yahoo has not yet published.
+from pipeline.nse_bhavcopy import download_bhavcopy, download_index_close
+for name,load in [('bhavcopy',download_bhavcopy),('index close',lambda d:download_index_close(d,'Nifty 500'))]:
+    try:
+        result=load(asof)
+        print('NSE',name,asof,'rows' if name=='bhavcopy' else 'bar',len(result) if name=='bhavcopy' else result,flush=True)
+    except Exception as exc:
+        print('NSE',name,asof,'unavailable:',type(exc).__name__,exc,flush=True)

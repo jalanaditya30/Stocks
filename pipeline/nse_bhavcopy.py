@@ -12,6 +12,11 @@ import pandas as pd
 
 SOURCE = "NSE CM-UDiFF Common Bhavcopy Final"
 URL = "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{date}_F_0000.csv.zip"
+INDEX_SOURCE = "NSE Daily Index Closing Snapshot"
+INDEX_URL = "https://nsearchives.nseindia.com/content/indices/ind_close_all_{date}.csv"
+# A provisional latest bar beyond this one-day raw move is more likely a
+# corporate action than a price; leave it for the provider to publish.
+MAX_LATEST_MOVE = (.6, 1.6)
 
 
 def concentrated_internal_gaps(universe, frames, required, threshold=.10):
@@ -77,15 +82,113 @@ def parse_bhavcopy(blob, expected_session):
     return rows
 
 
-def download_bhavcopy(session):
-    day = pd.Timestamp(session).strftime('%Y%m%d')
-    request = urllib.request.Request(URL.format(date=day), headers={
-        'User-Agent':'Mozilla/5.0 (compatible; StocksResearch/1.0)',
-        'Accept':'application/zip,application/octet-stream,*/*'})
+def parse_index_close(blob, expected_session, index_name):
+    """Parse one NSE daily index snapshot and return the named index's OHLC."""
+    expected = pd.Timestamp(expected_session).normalize()
+    frame = pd.read_csv(BytesIO(blob))
+    name, date = _column(frame, 'Index Name'), _column(frame, 'Index Date')
+    match = frame[frame[name].astype(str).str.strip().str.lower() == index_name.lower()]
+    if len(match) != 1:
+        raise ValueError(f'NSE index snapshot has no unique {index_name} row')
+    row = match.iloc[0]
+    if pd.to_datetime(str(row[date]), dayfirst=True, errors='coerce') != expected:
+        raise ValueError(f'NSE index snapshot date does not match {expected.date()}')
+    values = {key:pd.to_numeric(row[_column(frame, column)], errors='coerce') for key, column in
+              [('open','Open Index Value'),('high','High Index Value'),
+               ('low','Low Index Value'),('close','Closing Index Value'),('volume','Volume')]}
+    o, h, l, c = (float(values[k]) for k in ['open','high','low','close'])
+    if not np.isfinite([o,h,l,c]).all() or min(o,h,l,c) <= 0 or h < max(o,l,c) or l > min(o,h,c):
+        raise ValueError(f'NSE index snapshot has an invalid {index_name} bar')
+    volume = float(values['volume']) if np.isfinite(values['volume']) else 0.
+    return {'open':o,'high':h,'low':l,'close':c,'volume':max(volume, 0.)}
+
+
+def _download(url, accept):
+    request = urllib.request.Request(url, headers={
+        'User-Agent':'Mozilla/5.0 (compatible; StocksResearch/1.0)','Accept':accept})
     with urllib.request.urlopen(request, timeout=30) as response:
         if getattr(response, 'status', 200) != 200:
-            raise RuntimeError(f'NSE bhavcopy returned HTTP {response.status}')
-        return parse_bhavcopy(response.read(), session)
+            raise RuntimeError(f'NSE archive returned HTTP {response.status}')
+        return response.read()
+
+
+def download_bhavcopy(session):
+    day = pd.Timestamp(session).strftime('%Y%m%d')
+    return parse_bhavcopy(_download(URL.format(date=day),
+                                    'application/zip,application/octet-stream,*/*'), session)
+
+
+def download_index_close(session, index_name):
+    day = pd.Timestamp(session).strftime('%d%m%Y')
+    return parse_index_close(_download(INDEX_URL.format(date=day), 'text/csv,*/*'),
+                             session, index_name)
+
+
+def _append_bar(frame, day, row, factor):
+    values = {c:np.nan for c in frame.columns}
+    values.update({'Open':row['open']*factor,'High':row['high']*factor,
+                   'Low':row['low']*factor,'Close':row['close']*factor,
+                   'Adj Close':row['close']*factor,'Volume':row['volume'],
+                   'RawClose':row['close'],
+                   'CashTurnover':row['close']*row['volume']/1e7})
+    return pd.concat([frame, pd.DataFrame([values], index=pd.DatetimeIndex([day]))]).sort_index()
+
+
+def lagging_latest(universe, frames, required):
+    """Histories that stop exactly one session before the latest required session."""
+    required = pd.DatetimeIndex(required).tz_localize(None).normalize()
+    if len(required) < 2:
+        return []
+    previous = required[-2]
+    return [meta for meta in universe
+            if (frame := frames.get(meta['yahoo'])) is not None and not frame.empty
+            and frame.index[-1] == previous]
+
+
+def repair_latest_session(universe, frames, required, benchmark, index_name, threshold=.10,
+                          loader=download_bhavcopy, index_loader=download_index_close):
+    """Provisionally append the latest session when the provider has not published it.
+
+    Only histories ending exactly one session earlier are extended, using that
+    last bar's adjustment factor. Later Yahoo downloads replace these bars
+    because every refresh downloads complete histories afresh.
+    """
+    required = pd.DatetimeIndex(required).tz_localize(None).normalize()
+    day = required[-1]
+    lagging = lagging_latest(universe, frames, required)
+    minimum = max(1, int(np.ceil(len(universe) * threshold)))
+    report = {'session':str(day.date()),'source':SOURCE,'url_template':URL,
+              'index_source':INDEX_SOURCE,'index_url_template':INDEX_URL,
+              'detected_lagging':len(lagging),'attempted':len(lagging) >= minimum,
+              'benchmark_repaired':False,'repaired_bars':0,'skipped_bars':0,'errors':[]}
+    if not report['attempted']:
+        return report
+    bench = frames.get(benchmark)
+    if bench is not None and not bench.empty and bench.index[-1] == required[-2]:
+        try:
+            frames[benchmark] = _append_bar(bench, day, index_loader(day, index_name), 1.)
+            report['benchmark_repaired'] = True
+        except Exception as exc:
+            report['errors'].append({'session':str(day.date()),'source':INDEX_SOURCE,
+                                     'error':f'{type(exc).__name__}: {exc}'})
+    try:
+        official = loader(day)
+    except Exception as exc:
+        report['errors'].append({'session':str(day.date()),'source':SOURCE,
+                                 'error':f'{type(exc).__name__}: {exc}'})
+        return report
+    for meta in lagging:
+        frame, row = frames[meta['yahoo']], official.get(meta['isin'])
+        last = frame.iloc[-1]
+        factor = last.Close / last.RawClose if last.RawClose else np.nan
+        move = row['close'] / last.RawClose if row is not None and last.RawClose else np.nan
+        if (row is None or not np.isfinite([factor, move]).all() or factor <= 0 or
+                not MAX_LATEST_MOVE[0] <= move <= MAX_LATEST_MOVE[1]):
+            report['skipped_bars'] += 1
+            continue
+        frames[meta['yahoo']] = _append_bar(frame, day, row, float(factor))
+        report['repaired_bars'] += 1
+    return report
 
 
 def repair_concentrated_gaps(universe, frames, required, threshold=.10, loader=download_bhavcopy):
@@ -120,15 +223,7 @@ def repair_concentrated_gaps(universe, frames, required, threshold=.10, loader=d
                     not np.isclose(factors[0], factors[1], rtol=1e-7, atol=1e-10)):
                 item['skipped_bars'] += 1
                 continue
-            factor = float(factors[0])
-            values = {c:np.nan for c in frame.columns}
-            values.update({'Open':row['open']*factor,'High':row['high']*factor,
-                           'Low':row['low']*factor,'Close':row['close']*factor,
-                           'Adj Close':row['close']*factor,'Volume':row['volume'],
-                           'RawClose':row['close'],
-                           'CashTurnover':row['close']*row['volume']/1e7})
-            addition = pd.DataFrame([values], index=pd.DatetimeIndex([day]))
-            frames[ticker] = pd.concat([frame, addition]).sort_index()
+            frames[ticker] = _append_bar(frame, day, row, float(factors[0]))
             item['repaired_bars'] += 1
         report['repaired_bars'] += item['repaired_bars']
         report['skipped_bars'] += item['skipped_bars']
