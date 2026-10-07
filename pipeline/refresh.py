@@ -19,7 +19,7 @@ import yfinance as yf
 from pipeline.engine import normalized, analyze, theme_summary, vstop_series, pct
 from pipeline.calendar import calendar_metadata, exchange_sessions, recent_sessions
 from pipeline.ranking import SCORE_VERSION, score_rows
-from pipeline.nse_bhavcopy import repair_concentrated_gaps
+from pipeline.nse_bhavcopy import repair_concentrated_gaps, repair_latest_session
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT/'data'
@@ -141,7 +141,7 @@ def provenance(cfg):
     return {'code_revision':os.getenv('GITHUB_SHA') or 'working-tree',
             'model_version':cfg['version'],'ranking_version':SCORE_VERSION,
             'indicator_version':'technical-indicators-v1',
-            'data_source_version':'yahoo+nse-udiff-repair-v1',
+            'data_source_version':'yahoo+nse-udiff-repair-v2',
             'calendar':calendar_metadata(),
             'configuration_sha256':_sha256(ROOT/'config/model.json'),
             'universe_sha256':_sha256(ROOT/'config/universe.csv'),
@@ -532,6 +532,9 @@ def main():
         remaining=json.dumps(repair_report['remaining_concentrated_gaps'],sort_keys=True)
         errors=json.dumps(repair_report['errors'],sort_keys=True)
         raise RuntimeError(f'Concentrated exchange-session gaps remain after Yahoo retry and NSE repair: {remaining}; NSE errors: {errors}')
+    # Yahoo sometimes publishes the latest NSE session many hours late.
+    repair_report['latest_session']=repair_latest_session(
+        universe,frames,required,cfg['benchmark'],cfg.get('benchmark_name','Nifty 500'))
     asof=select_session(universe,frames,frames[cfg['benchmark']],expected,cfg['min_coverage'])
     history=DATA/'history'/cfg['version']/f'{asof}.json'
     frames={t:d.loc[:asof] for t,d in frames.items() if not d.loc[:asof].empty}

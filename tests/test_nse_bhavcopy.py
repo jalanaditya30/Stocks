@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 
 from pipeline.nse_bhavcopy import (concentrated_internal_gaps, parse_bhavcopy,
-                                   repair_concentrated_gaps)
+                                   parse_index_close, repair_concentrated_gaps,
+                                   repair_latest_session)
 
 
 META={'isin':'INE000000001','nse':'TEST','yahoo':'TEST.NS'}
@@ -79,6 +80,55 @@ class NseBhavcopyTests(unittest.TestCase):
                                         loader=unavailable)
         self.assertIn('archive unavailable',report['errors'][0]['error'])
         self.assertEqual(report['remaining_concentrated_gaps'],{'2026-09-17':1})
+
+    def test_index_snapshot_parser_selects_named_index_and_checks_date(self):
+        csv=('Index Name,Index Date,Open Index Value,High Index Value,Low Index Value,'
+             'Closing Index Value,Points Change,Change(%),Volume,Turnover (Rs. Cr.)\n'
+             'Nifty 50,17-09-2026,100,110,95,105,1,1,10,1\n'
+             'Nifty 500,17-09-2026,200,210,195,205,1,1,30,3\n').encode()
+        row=parse_index_close(csv,'2026-09-17','Nifty 500')
+        self.assertEqual((row['open'],row['close'],row['volume']),(200,205,30))
+        with self.assertRaisesRegex(ValueError,'date'):
+            parse_index_close(csv,'2026-09-18','Nifty 500')
+
+    def test_latest_session_is_appended_for_stocks_and_benchmark(self):
+        complete=history();day=complete.index[-1]
+        archive_day=archive(str(day.date()))
+        frames={'TEST.NS':complete.iloc[:-1].copy(),'^BENCH':complete.iloc[:-1].copy()}
+        index_bar={'open':1,'high':3,'low':.5,'close':2,'volume':0.}
+        report=repair_latest_session([META],frames,complete.index,'^BENCH','Nifty 500',
+                                     loader=lambda d:parse_bhavcopy(archive_day,d),
+                                     index_loader=lambda d,name:index_bar)
+        self.assertTrue(report['attempted'])
+        self.assertTrue(report['benchmark_repaired'])
+        self.assertEqual(report['repaired_bars'],1)
+        self.assertEqual(frames['TEST.NS'].index[-1],day)
+        self.assertAlmostEqual(frames['TEST.NS'].loc[day].Close,56)
+        self.assertAlmostEqual(frames['TEST.NS'].loc[day].RawClose,112)
+        self.assertAlmostEqual(frames['^BENCH'].loc[day].Close,2)
+
+    def test_latest_session_skips_corporate_action_sized_moves(self):
+        complete=history();day=complete.index[-1]
+        csv=("TradDt,ISIN,TckrSymb,SctySrs,OpnPric,HghPric,LwPric,ClsPric,TtlTradgVol\n"
+             f"{day.date()},INE000000001,TEST,EQ,56,57,55,56,2500\n")
+        output=BytesIO()
+        with zipfile.ZipFile(output,'w') as zipped:
+            zipped.writestr('BhavCopy.csv',csv)
+        frames={'TEST.NS':complete.iloc[:-1].copy()}
+        report=repair_latest_session([META],frames,complete.index,'^BENCH','Nifty 500',
+                                     loader=lambda d:parse_bhavcopy(output.getvalue(),d),
+                                     index_loader=lambda d,name:None)
+        self.assertEqual(report['skipped_bars'],1)
+        self.assertNotIn(day,frames['TEST.NS'].index)
+
+    def test_latest_session_not_attempted_when_provider_is_current(self):
+        complete=history();frames={'TEST.NS':complete.copy()}
+        def unexpected(*_):
+            raise AssertionError('archive should not be requested')
+        report=repair_latest_session([META],frames,complete.index,'^BENCH','Nifty 500',
+                                     loader=unexpected,index_loader=unexpected)
+        self.assertFalse(report['attempted'])
+        self.assertEqual(report['errors'],[])
 
 
 if __name__=='__main__':unittest.main()
