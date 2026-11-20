@@ -17,6 +17,7 @@ import pandas_market_calendars as mcal
 import yfinance as yf
 
 from pipeline.engine import normalized, analyze, theme_summary, vstop_series, pct
+from pipeline.theme_index import build_theme_indexes
 from pipeline.calendar import calendar_metadata, exchange_sessions, recent_sessions
 from pipeline.ranking import SCORE_VERSION, score_rows
 from pipeline.nse_bhavcopy import repair_concentrated_gaps, repair_latest_session
@@ -489,6 +490,13 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
             'r20':round(float((bc[-1]/bc[-21]-1)*100),2),
             'breadth':round(float(np.mean([r['above50'] for r in rows]))*100,1) if rows else None,
             'regime':regime,'above50':bool(bc[-1]>sma50),'above200':bool(bc[-1]>sma200) if sma200 else None}
+    # Equal-weight, monthly-rebalanced theme indices (StockScans method); display only.
+    try:
+        theme_index=build_theme_indexes(universe,frames,benchmark,
+            [('Industry',name,ids) for name,ids in groups.items()]+
+            [('Curated theme',t['name'],set(t['members'])) for t in themes],asof)
+    except Exception as exc:  # never block a snapshot on a display feature
+        theme_index={'schema':1,'asof':asof,'error':str(exc),'indexes':{}}
     rotation={'leaders':[t['name'] for t in theme_rows if t['taxonomy']=='Curated theme' and t['status'] in ['Leading','Emerging']][:5],
               'review':[t['name'] for t in theme_rows if t['taxonomy']=='Curated theme' and t['status'] in ['Weakening','Avoid']][:5]}
     generated=datetime.now(timezone.utc).isoformat()
@@ -505,6 +513,7 @@ def build(universe,frames,asof,cfg,themes,ledger,record=True,previous_themes=Non
              'excluded':len(excluded),'reasons':dict(Counter(x['reason'] for x in excluded))},
         'data_quality':quality,
         'rows':rows,'analysis_rows':analysis_rows,'themes':theme_rows,'rotation':rotation,
+        'theme_index':theme_index,
         'tracking':tracking,'summary':summary,'excluded':excluded,
         'surveillance':'Not automatically screened for ASM/GSM or price bands; verify on NSE before acting.'}
     return payload,{'schema':1,'model':cfg['version'],'asof':asof,

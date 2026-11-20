@@ -6,6 +6,7 @@ A daily Indian-equity research workspace for **confirmed moves** and **leaders r
 
 - One shared, completed-session dataset for all screens.
 - Confirmed stock moves and renewed advances after consolidation; no predicted win probabilities.
+- Equal-weight theme indices (StockScans custom-index method: equal shares, base 10,000, monthly rebalance) with 1D–1Y returns and current member weights for every curated theme and industry.
 - Curated themes and industries ranked as Leading, Emerging, Mature, Mixed, Weakening or Avoid, with scan-to-scan rank movement.
 - Visible VStop, OBV MACD, ADX/DI and Efficiency Ratio checks that describe whether a confirmed move still has technical support.
 - Established long-term momentum leaders as a separate context view.
@@ -55,7 +56,8 @@ Open `http://localhost:8080`. A limited scan (`python -m pipeline.refresh --limi
 |---|---|
 | `index.html`, `styles.css`, `app.js` | Static application; no paid service or AI dependency |
 | `config/universe.csv` | ISIN-based NSE registry inherited from Sector-data |
-| `config/themes.json` | Mapped curated memberships from Sector-data; no stale prices or inherited weights |
+| `config/themes.json` | Curated memberships (ISIN): Chartist DNA theme map v3 with Nov 2026 corrections, plus remaining Sector-data themes; no stale prices or inherited weights |
+| `pipeline/theme_index.py` | Equal-weight, monthly-rebalanced theme index levels (display only; kept outside the fingerprinted engine) |
 | `config/model.json` | Versioned confirmation parameters |
 | `pipeline/engine.py` | Normalization, confirmation and theme calculations |
 | `pipeline/refresh.py` | Shared fetch, publication, ledger and prospective outcomes |
